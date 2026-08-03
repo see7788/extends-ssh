@@ -1,0 +1,28 @@
+{
+  "name": "extends-ssh",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./*.ts": "./*.ts",
+    "./src/*.ts": "./src/*.ts",
+    "./src/*": "./src/*.ts"
+  },
+  "dependencies": {
+    "compressing": "^1.10.3",
+    "es-module-lexer": "2.3.1",
+    "extends-zustand": "workspace:*",
+    "immer": "10.2.0",
+    "node-ssh": "^13.2.1",
+    "react": "19.2.7",
+    "webrtcsignaling": "workspace:*",
+    "zustand": "5.0.13"
+  },
+  "peerDependencies": {
+    "vite": "^6.3.6 || ^7.0.0 || ^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.40",
+    "typescript": "5.9.3",
+    "vite": "^6.3.6"
+  }
+}
