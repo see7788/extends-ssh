@@ -4,8 +4,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
-import Public from "extends-ssh/Ubuntu/public.ts";
-import store from "extends-ssh/Ubuntu/store.ts";
+import Public from "../public.ts";
+import store from "../store.ts";
 
 export default class WebrtcProxy {
   private readonly runtime = new Public();

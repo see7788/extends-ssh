@@ -1,5 +1,5 @@
-import Public from "extends-ssh/Ubuntu/public.ts";
-import store from "extends-ssh/Ubuntu/store.ts";
+import Public from "./public.ts";
+import store from "./store.ts";
 
 export type Pm2ProcessState = {
   id: number;

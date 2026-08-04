@@ -6,8 +6,8 @@ import { createRequire, isBuiltin } from "node:module";
 import compressing from "compressing";
 import { init, parse } from "es-module-lexer";
 import type { Plugin, ResolvedConfig, ViteDevServer } from "vite";
-import Public from "extends-ssh/Ubuntu/public.ts";
-import store from "extends-ssh/Ubuntu/store.ts";
+import Public from "../public.ts";
+import store from "../store.ts";
 
 type Forward = {
   port: number;

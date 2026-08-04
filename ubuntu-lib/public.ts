@@ -1,4 +1,4 @@
-import store from "extends-ssh/Ubuntu/store.ts";
+import store from "./store.ts";
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
 
 export default class Public {

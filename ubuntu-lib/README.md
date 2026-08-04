@@ -1,11 +1,10 @@
-# Ubuntu 服务实现
+# ubuntu-lib
 
-`Ubuntu/` 为 Vite 项目生产公网运行结果，并交付 WebRTC Proxy 需要的已验证云端数据；从
-`extends-ssh/Ubuntu/index.ts` 引入 `ubuntu` 后注册对应插件或保障 WebRTC 服务。`src/` 只保留
-尚未迁移的 PeerJS、Coturn、邮件等旧能力，后续仍按“实现、验证、迁移、删除”逐个收口。
+`ubuntu-lib` 为 Vite 项目生产公网运行结果，并交付 WebRTC Proxy 与 PM2 需要的已验证云端
+数据；从 `ubuntu-lib/index.ts` 引入 `ubuntu` 后注册对应插件或保障远程服务。
 
 ```text
-Ubuntu/
+ubuntu-lib/
 ├── index.ts                 # 新入口，只组合成品业务需要的对象
 │   ├── vite: Vite  让 Vite 配置取得开发隧道与构建发布能力
 │   ├── webrtcProxy: WebrtcProxy  让 WebRTC 业务取得并保障信令与 STUN 数据
@@ -60,21 +59,12 @@ Ubuntu/
     │   └── 调用 Public.execute()
     └── dispose(): void  关闭当前服务实例持有的 SSH 会话
         └── 调用 NodeSSH.dispose()
-src/
-├── Ubuntu.ts                # 尚未迁移的旧服务入口
-│   ├── sshIsConnect()、execCommand()、dispose()  提供旧 SSH 生命周期与命令能力
-│   ├── nvmInstalled()、httpserverIsInstalled()、pm2IsRunning()  保障旧 Node 运行环境
-│   ├── dockerIsRunning()、portInUse()、portClose()  保障旧容器与端口环境
-│   ├── coturnIsRunning()、peerjsIsRunning()  保障旧 PeerJS 与 Coturn 服务
-│   ├── emailSmtpIsRunning()  保障旧 SMTP 服务
-│   └── peerjsState  交付旧 PeerJS 与 STUN 数据
-└── store.ts                 # 只保存上述未迁移旧能力仍在消费的数据
 ```
 
 Hono 与多个 React 项目：
 
 ```ts
-import ubuntu from "extends-ssh/Ubuntu/index.ts";
+import ubuntu from "ubuntu-lib/index.ts";
 import honoReact from "vite-config-lib/plugin";
 import { defineConfig } from "vite";
 
@@ -98,7 +88,7 @@ export default defineConfig({
 
 ```ts
 import react from "@vitejs/plugin-react";
-import ubuntu from "extends-ssh/Ubuntu/index.ts";
+import ubuntu from "ubuntu-lib/index.ts";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -110,7 +100,7 @@ export default defineConfig({
 普通 Electron React Renderer：
 
 ```ts
-import ubuntu from "extends-ssh/Ubuntu/index.ts";
+import ubuntu from "ubuntu-lib/index.ts";
 import rendererReact from "electron-vite-config-lib/rendererReactPlugin/plugin";
 import { defineConfig } from "electron-vite";
 
@@ -128,7 +118,7 @@ Electron Hono 与多个 React Renderer：
 
 ```ts
 import react from "@vitejs/plugin-react";
-import ubuntu from "extends-ssh/Ubuntu/index.ts";
+import ubuntu from "ubuntu-lib/index.ts";
 import rendererHonoReact from "electron-vite-config-lib/rendererHonoReactPlugin/plugin";
 import { defineConfig } from "electron-vite";
 
@@ -151,7 +141,7 @@ export default defineConfig({
 WebRTC Proxy 启动并消费完整数据：
 
 ```ts
-import ubuntu from "extends-ssh/Ubuntu/index.ts";
+import ubuntu from "ubuntu-lib/index.ts";
 
 await ubuntu.webrtcProxy.isRunning();
 const { peerServer, stunServer } = ubuntu.webrtcProxy.state;

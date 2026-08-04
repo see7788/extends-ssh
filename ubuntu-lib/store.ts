@@ -1,7 +1,7 @@
-import viteStore, { type ViteStore } from "extends-ssh/Ubuntu/Vite/store.ts";
+import viteStore, { type ViteStore } from "./Vite/store.ts";
 import webrtcProxyStore, {
   type WebrtcProxyStore,
-} from "extends-ssh/Ubuntu/WebrtcProxy/store.ts";
+} from "./WebrtcProxy/store.ts";
 import cwdPersist from "extends-zustand/cwdPersist";
 import { homedir } from "node:os";
 import path from "node:path";

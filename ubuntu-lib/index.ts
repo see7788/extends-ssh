@@ -1,6 +1,6 @@
-import Vite from "extends-ssh/Ubuntu/Vite/index.ts";
-import WebrtcProxy from "extends-ssh/Ubuntu/WebrtcProxy/index.ts";
-import Pm2 from "extends-ssh/Ubuntu/Pm2.ts";
+import Vite from "./Vite/index.ts";
+import WebrtcProxy from "./WebrtcProxy/index.ts";
+import Pm2 from "./Pm2.ts";
 
 class Ubuntu {
   /** 让具体业务取得并维护远程 PM2 进程数据。 */

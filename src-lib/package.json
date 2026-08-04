@@ -1,0 +1,21 @@
+{
+  "name": "src-lib",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./*.ts": "./*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "extends-zustand": "workspace:*",
+    "immer": "10.2.0",
+    "node-ssh": "^13.2.1",
+    "zustand": "5.0.13"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.40",
+    "typescript": "5.9.3"
+  }
+}
