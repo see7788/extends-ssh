@@ -50,14 +50,22 @@ const store = <T extends object = {}>(
         set(state => {
           const current = state.sshServices[registration.name];
           if (current && definitionSame(current, registration)) return;
-          if (current) {
+          if (
+            current
+            && (
+              current.remotePath !== registration.remotePath
+              || current.processName !== registration.processName
+              || current.entry !== registration.entry
+            )
+          ) {
             throw new Error(
-              `SSH 服务名称已由其他定义占用: ${registration.name}`,
+              `SSH 服务名称已由其他远端身份占用: ${registration.name}`,
             );
           }
           state.sshServices[registration.name] = {
             ...registration,
             status: "unknown",
+            revision: current?.revision,
           };
         });
       },
