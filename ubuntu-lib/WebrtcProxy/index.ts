@@ -1,14 +1,13 @@
 import dgram from "node:dgram";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
 import Public from "../public.ts";
+import type Services from "../Service/index.ts";
 import store from "../store.ts";
 
 export default class WebrtcProxy {
   private readonly runtime = new Public();
+
+  constructor(private readonly services: Services) {}
 
   /** 交付 WebRTC Proxy 直接消费的信令与 STUN 连接数据。 */
   public get state() {
@@ -39,36 +38,23 @@ export default class WebrtcProxy {
     };
   }
 
+  /** 交付指定项目无需调用方补充参数的连接凭证颁发地址。 */
+  public tokenUrl(projectName: string): string {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(projectName)) {
+      throw new TypeError(`WebRTC 项目名称无效: ${projectName}`);
+    }
+    const { peerServer } = this.state;
+    const origin = `${peerServer.secure ? "https" : "http"}://${peerServer.host}:${String(peerServer.port)}`;
+    return `${origin}${peerServer.path}/${encodeURIComponent(projectName)}/connect`;
+  }
+
   /** 发布并验证公网 HTTP、WebSocket 信令与 STUN 服务。 */
   public async isRunning(): Promise<typeof this.state> {
-    const packageJson = createRequire(import.meta.url).resolve("webrtcsignaling/package.json");
-    const packageRoot = path.dirname(packageJson);
-    execFileSync("pnpm", ["build"], {
-      cwd: packageRoot,
-      encoding: "utf8",
-      shell: process.platform === "win32",
-      stdio: "pipe",
-    });
-    const localServer = path.resolve(packageRoot, "dist", "server.cjs");
-    if (!existsSync(localServer)) throw new Error(`WebRTC 信令构建产物不存在: ${localServer}`);
-
+    await this.services.get("webrtcsignaling").isRunning();
     const { peerServer, stunServer } = this.state;
-    const remotePath = "/www/wwwroot/extends-ssh/webrtcsignaling";
     try {
-      await this.runtime.pm2IsRunning();
-      await this.runtime.execute(`mkdir -p '${remotePath}'`);
-      await this.runtime.ssh.putFile(localServer, `${remotePath}/server.cjs`);
       await this.runtime.execute(`
 set -e
-systemctl disable --now webrtcsignaling >/dev/null 2>&1 || true
-pm2 delete webrtcsignaling >/dev/null 2>&1 || true
-cd '${remotePath}'
-WEBRTC_SIGNALING_HOSTNAME=0.0.0.0 \\
-WEBRTC_SIGNALING_PORT=${peerServer.port} \\
-WEBRTC_SIGNALING_PATH='${peerServer.path}' \\
-pm2 start server.cjs --name webrtcsignaling --interpreter node
-pm2 save --force >/dev/null
-
 if ! docker info >/dev/null 2>&1; then
   echo '当前 WebRTC STUN 生产者要求远程 Docker daemon 可用' >&2
   exit 1
@@ -110,11 +96,37 @@ ss -lun | grep -q ':${stunServer.port} '
       throw new Error(`WebRTC 信令公网健康检查失败: HTTP ${health.status}`);
     }
 
-    const peerId = `extends-ssh-${Date.now()}`;
+    const connectionResponse = await fetch(this.tokenUrl("ubuntu-lib-health"), {
+      method: "POST",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!connectionResponse.ok) {
+      throw new Error(`WebRTC 连接凭证颁发失败: HTTP ${connectionResponse.status}`);
+    }
+    const connection = await connectionResponse.json() as {
+      peerId?: unknown;
+      token?: unknown;
+      signalingPath?: unknown;
+    };
+    if (
+      typeof connection.peerId !== "string"
+      || typeof connection.token !== "string"
+      || typeof connection.signalingPath !== "string"
+      || !connection.signalingPath.startsWith("/")
+    ) {
+      throw new Error("WebRTC 连接凭证格式无效");
+    }
+    const signalingUrl = new URL(
+      connection.signalingPath,
+      connectionResponse.url || this.tokenUrl("ubuntu-lib-health"),
+    );
+    if (signalingUrl.protocol === "http:") signalingUrl.protocol = "ws:";
+    else if (signalingUrl.protocol === "https:") signalingUrl.protocol = "wss:";
+    else throw new TypeError(`WebRTC 信令协议无效: ${signalingUrl.protocol}`);
+    signalingUrl.searchParams.set("token", connection.token);
+
     await new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(
-        `ws://${peerServer.host}:${peerServer.port}${peerServer.path}?peerId=${peerId}`,
-      );
+      const socket = new WebSocket(signalingUrl);
       const timeout = setTimeout(() => {
         socket.close();
         reject(new Error("WebRTC 信令公网 WebSocket 握手超时"));
@@ -122,7 +134,7 @@ ss -lun | grep -q ':${stunServer.port} '
       socket.addEventListener("message", event => {
         try {
           const message = JSON.parse(String(event.data)) as { type?: string; peerId?: string };
-          if (message.type !== "open" || message.peerId !== peerId) return;
+          if (message.type !== "open" || message.peerId !== connection.peerId) return;
           clearTimeout(timeout);
           socket.close();
           resolve();

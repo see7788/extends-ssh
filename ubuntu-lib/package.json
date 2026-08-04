@@ -14,7 +14,6 @@
     "extends-zustand": "workspace:*",
     "immer": "10.2.0",
     "node-ssh": "^13.2.1",
-    "webrtcsignaling": "workspace:*",
     "zustand": "5.0.13"
   },
   "peerDependencies": {

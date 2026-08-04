@@ -1,4 +1,5 @@
 import viteStore, { type ViteStore } from "./Vite/store.ts";
+import serviceStore, { type SshServiceStore } from "./Service/store.ts";
 import webrtcProxyStore, {
   type WebrtcProxyStore,
 } from "./WebrtcProxy/store.ts";
@@ -9,7 +10,7 @@ import { createStore } from "zustand";
 import type {} from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 
-type Store = ViteStore & WebrtcProxyStore & {
+type Store = ViteStore & WebrtcProxyStore & SshServiceStore & {
   ssh: {
     host: string;
     port: number;
@@ -31,6 +32,7 @@ export default createStore<Store>()(
         password: "9K78s98[98]j.9",
       },
       mainDomain: "13520521413.store",
+      ...serviceStore(set, get, api),
       ...viteStore(set, get, api),
       ...webrtcProxyStore(set, get, api),
     })),
