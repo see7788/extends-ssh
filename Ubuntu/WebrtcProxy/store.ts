@@ -1,4 +1,4 @@
-import immerStateCreator from "extends-zustand/immerStateCreator";
+import type { ImmerStateCreator } from "extends-zustand/immerStateCreator";
 
 export type WebrtcProxyStore = {
   webrtcProxy: {
@@ -12,7 +12,9 @@ export type WebrtcProxyStore = {
   };
 };
 
-export default immerStateCreator<WebrtcProxyStore>(() => ({
+const store = <T extends object = {}>(
+  ..._args: Parameters<ImmerStateCreator<WebrtcProxyStore, T>>
+): WebrtcProxyStore => ({
   webrtcProxy: {
     peerServer: {
       port: 9001,
@@ -22,4 +24,6 @@ export default immerStateCreator<WebrtcProxyStore>(() => ({
       port: 3478,
     },
   },
-}));
+});
+
+export default store;
