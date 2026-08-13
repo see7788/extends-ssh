@@ -213,7 +213,7 @@ export default function vitePlugin(
       isBuild = config.command === "build";
       const entryPath = resolve(projectRoot, entry);
       if (!existsSync(entryPath)) throw new Error(`WebRTC 信令入口不存在: ${entryPath}`);
-      sourceEntry = relative(projectRoot, entryPath).replaceAll("\\", "/");
+      sourceEntry = relative(projectRoot, entryPath).replace(/\\/g, "/");
       if (!sourceEntry || sourceEntry.startsWith("../")) {
         throw new Error(`WebRTC 信令入口必须位于项目根目录内: ${entryPath}`);
       }

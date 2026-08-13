@@ -26,6 +26,14 @@ export default abstract class Vite {
     forwards: new Map<number, RegisteredForward>(),
   };
 
+  public state(port: number) {
+    return {
+      host: this.hostname(port),
+      port: 443 as const,
+      secure: true as const,
+    };
+  }
+
   /** 为 Hono 与其 React 项目建立开发隧道，并在构建后发布 Node 服务。 */
   public honoReact(): Plugin {
     return this.plugin("honoReact");
@@ -345,7 +353,7 @@ pm2 save --force >/dev/null 2>&1 || true
           : specifier.split("/")[0]);
       }
     }
-    for (const name of external) {
+    for (const name of Array.from(external)) {
       const configured = sourcePackage.dependencies?.[name];
       if (configured?.startsWith("workspace:")) {
         throw new Error(`Node 构建产物仍依赖 workspace 包 ${name}`);
@@ -417,7 +425,9 @@ printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
       }
       await new Promise(resolve => setTimeout(resolve, 250));
     }
-    throw new Error(`公网 HTTPS 验证失败 ${url}`, { cause: failure });
+    throw new Error(
+      `公网 HTTPS 验证失败 ${url}: ${failure instanceof Error ? failure.message : String(failure)}`,
+    );
   }
 
   private async connect(): Promise<void> {

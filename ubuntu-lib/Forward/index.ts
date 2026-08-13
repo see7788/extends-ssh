@@ -81,7 +81,7 @@ export default abstract class Forward {
   }
 
   public async dispose(): Promise<void> {
-    await Promise.all([...this.forwards.values()].map(forward => this.forwardClose(forward)));
+    await Promise.all(Array.from(this.forwards.values(), forward => this.forwardClose(forward)));
     this.forwards.clear();
   }
 
@@ -150,10 +150,10 @@ export default abstract class Forward {
   }
 
   private connectionsClose(forward: ForwardData): void {
-    for (const { local, remote } of forward.connections) {
+    forward.connections.forEach(({ local, remote }) => {
       local.destroy();
       remote.destroy();
-    }
+    });
     forward.connections.clear();
   }
 

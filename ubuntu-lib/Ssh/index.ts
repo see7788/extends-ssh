@@ -31,9 +31,9 @@ export default class Ssh {
     const execution = await this.client.execCommand("true");
     if (execution.code !== 0) {
       this.client.dispose();
-      throw new Error(`SSH 连接验证失败 (${String(execution.code)})`, {
-        cause: execution.stderr || execution.stdout,
-      });
+      throw new Error(
+        `SSH 连接验证失败 (${String(execution.code)}): ${execution.stderr || execution.stdout}`,
+      );
     }
     this.connection.isConnected = true;
     this.connection.revision += 1;

@@ -225,6 +225,6 @@ HTTPS
   }
 
   private shell(value: string): string {
-    return `'${value.replaceAll("'", `'"'"'`)}'`;
+    return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }

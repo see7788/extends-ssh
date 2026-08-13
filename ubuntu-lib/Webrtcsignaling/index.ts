@@ -130,7 +130,7 @@ export default abstract class Webrtcsignaling {
         .sort((left, right) => left.name.localeCompare(right.name))) {
         const localPath = resolve(directory, directoryEntry.name);
         if (!sourceIncluded(localPath)) continue;
-        const sourceName = relative(path, localPath).replaceAll("\\", "/");
+        const sourceName = relative(path, localPath).replace(/\\/g, "/");
         if (directoryEntry.isDirectory()) sourceHashUpdate(localPath);
         if (directoryEntry.isFile()) {
           sourceHash.update(sourceName).update("\0").update(readFileSync(localPath));
@@ -291,6 +291,6 @@ trap - ERR
   }
 
   private shell(value: string): string {
-    return `'${value.replaceAll("'", `'"'"'`)}'`;
+    return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }

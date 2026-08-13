@@ -85,6 +85,6 @@ exit 1
   }
 
   private shell(value: string): string {
-    return `'${value.replaceAll("'", `'"'"'`)}'`;
+    return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }
