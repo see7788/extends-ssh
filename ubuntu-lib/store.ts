@@ -1,7 +1,6 @@
 import peerjsStore from "./Peerjs/store.ts";
 import publicStore from "./Public/store.ts";
 import stunServerStore from "./StunServer/store.ts";
-import webrtcsignalingNodeState from "./Webrtcsignaling/nodeState.ts";
 import webrtcsignalingStore from "./Webrtcsignaling/store.ts";
 import cwdPersist from "extends-zustand/cwdPersist";
 import { homedir } from "node:os";
@@ -13,13 +12,11 @@ import { immer } from "zustand/middleware/immer";
 type PeerjsStore = ReturnType<typeof peerjsStore>;
 type PublicStore = ReturnType<typeof publicStore>;
 type StunServerStore = ReturnType<typeof stunServerStore>;
-type WebrtcsignalingNodeState = ReturnType<typeof webrtcsignalingNodeState>;
 type WebrtcsignalingStore = ReturnType<typeof webrtcsignalingStore>;
 
 type Store = PublicStore
   & PeerjsStore
   & StunServerStore
-  & WebrtcsignalingNodeState
   & WebrtcsignalingStore;
 
 type PersistedState = Pick<
@@ -35,7 +32,6 @@ const store = createStore<Store>()(
       ...publicStore(set, get, api),
       ...peerjsStore(set, get, api),
       ...stunServerStore(set, get, api),
-      ...webrtcsignalingNodeState(set, get, api),
       ...webrtcsignalingStore(set, get, api),
     })),
   }),

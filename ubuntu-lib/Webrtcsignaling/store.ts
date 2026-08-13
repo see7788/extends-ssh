@@ -1,8 +1,5 @@
 import type { ImmerStateCreator } from "extends-zustand/immerStateCreator";
-
-type nodeState_t = {
-  path_isAbsolute_nodestate: typeof import("node:path").isAbsolute;
-};
+import { isAbsolute } from "node:path";
 
 type WebrtcsignalingStore = {
   webrtcsignaling: {
@@ -16,7 +13,7 @@ type WebrtcsignalingStore = {
   };
 };
 
-const webrtcsignalingStore: ImmerStateCreator<WebrtcsignalingStore, nodeState_t> = (set, get) => ({
+const webrtcsignalingStore: ImmerStateCreator<WebrtcsignalingStore> = set => ({
   webrtcsignaling: {
     entry: "",
     path: "",
@@ -25,7 +22,7 @@ const webrtcsignalingStore: ImmerStateCreator<WebrtcsignalingStore, nodeState_t>
   },
   webrtcsignalingActions: {
     register(registration) {
-      if (!get().path_isAbsolute_nodestate(registration.path)) {
+      if (!isAbsolute(registration.path)) {
         throw new TypeError(`WebRTC 信令源码目录必须是绝对路径: ${registration.path}`);
       }
       if (
@@ -45,5 +42,4 @@ const webrtcsignalingStore: ImmerStateCreator<WebrtcsignalingStore, nodeState_t>
   },
 });
 
-export type { nodeState_t };
 export default webrtcsignalingStore;
