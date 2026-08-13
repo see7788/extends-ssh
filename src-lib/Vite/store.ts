@@ -15,11 +15,6 @@ type RegisteredForward = {
 
 type ViteSlice = {
   viteActions: {
-    connection(port: number): {
-      host: string;
-      port: 443;
-      secure: true;
-    };
     forwardPlugin(): Plugin;
     staticPlugin(): Plugin;
     nodePlugin(): Plugin;
@@ -28,6 +23,7 @@ type ViteSlice = {
 
 type ViteDependencies = {
   public: {
+    domain: string;
     remoteRoot: string;
   };
   forwardActions: {
@@ -37,13 +33,12 @@ type ViteDependencies = {
       remote: { host: string; port: number };
     }): RegisteredForward;
   };
+  nginx: {
+    httpPort: 80;
+    httpsPort: 443;
+    secure: true;
+  };
   nginxActions: {
-    connection(): {
-      domain: string;
-      httpPort: 80;
-      httpsPort: 443;
-      secure: true;
-    };
     proxyRouteIsRunning(route: {
       name: string;
       hostname: string;
@@ -90,8 +85,8 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
     }
     return port;
   };
-  const connection = (port: number) => ({
-    host: `vite-${portRequired(port)}.dev.${get().nginxActions.connection().domain}`,
+  const serviceRead = (port: number) => ({
+    host: `vite-${portRequired(port)}.dev.${get().public.domain.trim().toLowerCase()}`,
     port: 443 as const,
     secure: true as const,
   });
@@ -100,7 +95,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
   const staticRoute = async (port: number, root: string): Promise<void> => {
     await get().nginxActions.staticRouteIsRunning({
       name: `vite-${port}`,
-      hostname: connection(port).host,
+      hostname: serviceRead(port).host,
       pathname: "/",
       root,
       spaFallback: true,
@@ -109,7 +104,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
   const proxyRoute = async (port: number, upstreamPort: number): Promise<void> => {
     await get().nginxActions.proxyRouteIsRunning({
       name: `vite-${port}`,
-      hostname: connection(port).host,
+      hostname: serviceRead(port).host,
       pathname: "/",
       upstreamPort: portRequired(upstreamPort),
     });
@@ -119,7 +114,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
     pathname = "/",
     notFoundAllowed = false,
   ): Promise<void> => {
-    const url = `https://${connection(port).host}${pathname}`;
+    const url = `https://${serviceRead(port).host}${pathname}`;
     const deadline = Date.now() + 15_000;
     let failure: unknown;
     while (Date.now() < deadline) {
@@ -145,7 +140,6 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
 
   return {
     viteActions: {
-      connection,
       forwardPlugin() {
         let port = 0;
         let registeredForward: RegisteredForward | undefined;
@@ -189,7 +183,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
               if (!kind) {
                 await get().nginxActions.routeClose({
                   name: `vite-${port}`,
-                  hostname: connection(port).host,
+                  hostname: serviceRead(port).host,
                 });
               }
             })().catch(error => {
@@ -206,7 +200,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
           config: (_config, environment) => environment.command === "serve"
             ? {
                 server: {
-                  allowedHosts: [`.dev.${get().nginxActions.connection().domain}`],
+                  allowedHosts: [`.dev.${get().public.domain.trim().toLowerCase()}`],
                   host: "127.0.0.1",
                   strictPort: true,
                 },

@@ -44,13 +44,13 @@ src-lib/
 │       └── nginxActions             # 运行验证、反向代理、静态路由、关闭路由
 ├── Peerjs/
 │   └── store.ts                     # PeerJS 配置与服务生产者
-│       └── peerjsActions            # connection、isRemoteRunning
+│       └── peerjsActions            # isRemoteRunning
 ├── StunServer/
 │   └── store.ts                     # STUN 配置与 Coturn 服务生产者
-│       └── stunServerActions        # connection、isRemoteRunning、vitePlugin
+│       └── stunServerActions        # isRemoteRunning、vitePlugin
 ├── Webrtcsignaling/
 │   └── store.ts                     # 私有信令配置、部署与专属 Vite 插件
-│       └── webrtcsignalingActions   # register、connection、isRemoteRunning、vitePlugin
+│       └── webrtcsignalingActions   # register、isRemoteRunning、vitePlugin
 └── Vite/
     └── store.ts                     # 无状态的构建流程消费者切片
         └── viteActions              # forwardPlugin、staticPlugin、nodePlugin

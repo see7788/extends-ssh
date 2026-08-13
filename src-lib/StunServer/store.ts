@@ -9,11 +9,6 @@ type StunServerSlice = {
     port: number;
   };
   stunServerActions: {
-    connection(): {
-      host: string;
-      port: number;
-      secure: false;
-    };
     isRemoteRunning(): Promise<void>;
     vitePlugin(): Plugin;
   };
@@ -33,7 +28,7 @@ type StunServerDependencies = {
 
 const s: immerStateCreator<StunServerSlice, StunServerDependencies> = (_set, get) => {
   let running: Promise<void> | undefined;
-  const connection = () => {
+  const serviceRead = () => {
     const { ssh, stunServer } = get();
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
       throw new TypeError(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
@@ -84,11 +79,10 @@ const s: immerStateCreator<StunServerSlice, StunServerDependencies> = (_set, get
   return {
     stunServer: { port: 3478 },
     stunServerActions: {
-      connection,
       isRemoteRunning() {
         if (running) return running;
         const execution = (async () => {
-          const state = connection();
+          const state = serviceRead();
           await get().dockerActions.isRemoteRunning();
           await get().sshActions.execute(`
 set -e
@@ -116,7 +110,7 @@ ss -lun | grep -Eq ':${state.port}[[:space:]]'
         return execution;
       },
       vitePlugin() {
-        const state = connection();
+        const state = serviceRead();
         return {
           name: "src-lib:stunServer-consumer",
           config: () => ({

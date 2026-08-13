@@ -30,12 +30,6 @@ type WebrtcsignalingSlice = {
     pathname: "/signal";
   };
   webrtcsignalingActions: {
-    connection(): {
-      host: string;
-      port: 443;
-      path: "/signal";
-      secure: true;
-    };
     register(registration: { entry: string; path: string }): void;
     isRemoteRunning(): Promise<void>;
     vitePlugin(options: { entry: string } | { projectName: string }): Plugin;
@@ -182,7 +176,7 @@ const s: immerStateCreator<
 > = (set, get) => {
   let running: Promise<void> | undefined;
   const shell = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
-  const connection = () => ({
+  const serviceRead = () => ({
     host: `webrtc.${get().public.domain.trim().toLowerCase()}`,
     port: 443 as const,
     path: get().webrtcsignaling.pathname,
@@ -391,7 +385,7 @@ test "$HEALTHY" = 1
 trap - ERR
 `);
       }
-      const state = connection();
+      const state = serviceRead();
       await get().nginxActions.proxyRouteIsRunning({
         name: serviceName,
         hostname: state.host,
@@ -453,11 +447,10 @@ trap - ERR
       pathname: "/signal",
     },
     webrtcsignalingActions: {
-      connection,
       register,
       isRemoteRunning,
       vitePlugin(options) {
-        const signaling = connection();
+        const signaling = serviceRead();
         if ("projectName" in options) {
           if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(options.projectName)) {
             throw new TypeError(`WebRTC 项目名称无效: ${options.projectName}`);

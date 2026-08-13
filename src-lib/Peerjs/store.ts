@@ -9,13 +9,6 @@ type PeerjsSlice = {
     pathname: "/peerjs";
   };
   peerjsActions: {
-    connection(): {
-      host: string;
-      port: 443;
-      path: "/peerjs";
-      secure: true;
-      key: "peerjs";
-    };
     isRemoteRunning(): Promise<void>;
   };
 };
@@ -43,16 +36,6 @@ type PeerjsDependencies = {
 const s: immerStateCreator<PeerjsSlice, PeerjsDependencies> = (_set, get) => {
   let running: Promise<void> | undefined;
   const shell = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
-  const connection = () => {
-    const { peerjs, public: publicState } = get();
-    return {
-      host: `webrtc.${publicState.domain.trim().toLowerCase()}`,
-      port: 443 as const,
-      path: peerjs.pathname,
-      secure: true as const,
-      key: peerjs.key,
-    };
-  };
   return {
     peerjs: {
       image: "peerjs/peerjs-server:1.0.2",
@@ -61,7 +44,6 @@ const s: immerStateCreator<PeerjsSlice, PeerjsDependencies> = (_set, get) => {
       pathname: "/peerjs",
     },
     peerjsActions: {
-      connection,
       isRemoteRunning() {
         if (running) return running;
         const execution = (async () => {
@@ -99,7 +81,10 @@ done
 docker logs --tail 40 peerjs >&2 || true
 exit 1
 `);
-          const state = connection();
+          const state = {
+            host: `webrtc.${get().public.domain.trim().toLowerCase()}`,
+            path: peerjs.pathname,
+          };
           await get().nginxActions.proxyRouteIsRunning({
             name: "peerjs",
             hostname: state.host,

@@ -23,12 +23,6 @@ type NginxSlice = {
     secure: true;
   };
   nginxActions: {
-    connection(): {
-      domain: string;
-      httpPort: 80;
-      httpsPort: 443;
-      secure: true;
-    };
     isRemoteRunning(): Promise<void>;
     proxyRouteIsRunning(route: ProxyRoute): Promise<void>;
     staticRouteIsRunning(route: StaticRoute): Promise<void>;
@@ -172,10 +166,6 @@ HTTPS
       secure: true,
     },
     nginxActions: {
-      connection() {
-        const domain = hostnameRequired(get().public.domain);
-        return { domain, ...get().nginx };
-      },
       isRemoteRunning,
       async proxyRouteIsRunning(route) {
         const name = nameRequired(route.name);

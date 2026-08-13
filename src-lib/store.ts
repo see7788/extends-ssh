@@ -32,43 +32,10 @@ type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof webrtcsignalingStore>
   & ReturnType<typeof viteStore>;
 
-type PersistedState = {
-  public: {
-    domain: string;
-    remoteRoot: string;
-  };
-  ssh: {
-    host: string;
-    port: number;
-    username: string;
-    password: string;
-  };
-  nodejs: {
-    version: string;
-    architecture: "linux-x64";
-    sha256: string;
-  };
-  nginx: {
-    httpPort: 80;
-    httpsPort: 443;
-    secure: true;
-  };
-  peerjs: {
-    image: "peerjs/peerjs-server:1.0.2";
-    key: "peerjs";
-    listenPort: 9000;
-    pathname: "/peerjs";
-  };
-  stunServer: {
-    port: number;
-  };
-  webrtcsignaling: {
-    entry: string;
-    path: string;
-    listenPort: 9001;
-    pathname: "/signal";
-  };
-};
+type PersistedState = Pick<
+  Store,
+  "public" | "ssh" | "nodejs" | "nginx" | "peerjs" | "stunServer" | "webrtcsignaling"
+>;
 
 const persistPath = path.join(
   homedir(),
