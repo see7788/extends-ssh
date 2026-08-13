@@ -5,16 +5,21 @@ import { createRequire, isBuiltin } from "node:module";
 import compressing from "compressing";
 import { init, parse } from "es-module-lexer";
 import type { Plugin, ResolvedConfig, ViteDevServer } from "vite";
-import forward from "../Forward/index.ts";
-import nginx from "../Nginx/index.ts";
-import pm2 from "../Pm2/index.ts";
-import publicRuntime from "../Public/index.ts";
-import sftp from "../Sftp/index.ts";
+import type Forward from "../Forward/index.ts";
+import type Nginx from "../Nginx/index.ts";
+import type Pm2 from "../Pm2/index.ts";
+import type Sftp from "../Sftp/index.ts";
+import type Ssh from "../Ssh/index.ts";
 import store from "../store.ts";
 
-type RegisteredForward = ReturnType<typeof forward.register>;
+type RegisteredForward = ReturnType<Forward["register"]>;
 
-class Vite {
+export default abstract class Vite {
+  protected abstract readonly forward: Forward;
+  protected abstract readonly nginx: Nginx;
+  protected abstract readonly pm2: Pm2;
+  protected abstract readonly sftp: Sftp;
+  protected abstract readonly ssh: Ssh;
   private readonly data = {
     forwards: new Map<number, RegisteredForward>(),
   };
@@ -48,7 +53,7 @@ class Vite {
       enforce: "post",
       config: (_config, environment) => environment.command === "serve" ? ({
           server: {
-            allowedHosts: [`.dev.${nginx.state.domain}`],
+            allowedHosts: [`.dev.${this.domain()}`],
             host: "127.0.0.1",
             strictPort: true,
           },
@@ -85,13 +90,13 @@ class Vite {
           const deploymentPackage = await this.packageCreate({ localPath, projectRoot, port });
           try {
             const remotePath = await this.upload({ localPath, port, preserveDirectory: true });
-            await sftp.remoteUpload(
+            await this.sftp.remoteUpload(
               deploymentPackage,
               `${remotePath}/package.json`,
             );
-            await pm2.isRemoteRunning();
+            await this.pm2.isRemoteRunning();
             const processName = `vite-node-${port}`;
-            const startResult = await publicRuntime.execute(`
+            const startResult = await this.ssh.execute(`
 set -e
 pm2 delete ${this.shell(processName)} >/dev/null 2>&1 || true
 pm2 delete ${this.shell(`vite-static-${port}`)} >/dev/null 2>&1 || true
@@ -131,7 +136,7 @@ exit 1
 `);
             const upstreamMatch = startResult.stdout.match(/EXTENDS_SSH_UPSTREAM=(\d+)/);
             const upstreamPort = this.portRequired(Number(upstreamMatch?.[1]));
-            await nginx.proxyRouteIsRunning({
+            await this.nginx.proxyRouteIsRunning({
               name: `vite-${port}`,
               hostname: this.hostname(port),
               pathname: "/",
@@ -147,7 +152,7 @@ exit 1
           if (!existsSync(localPath)) throw new Error(`Vite 构建目录不存在: ${localPath}`);
           const port = this.portRequired(config.server.port);
           const remotePath = await this.upload({ localPath, port });
-          await publicRuntime.execute(`
+          await this.ssh.execute(`
 pm2 delete ${this.shell(`vite-static-${port}`)} >/dev/null 2>&1 || true
 pm2 delete ${this.shell(`vite-node-${port}`)} >/dev/null 2>&1 || true
 pm2 save --force >/dev/null 2>&1 || true
@@ -192,7 +197,7 @@ pm2 save --force >/dev/null 2>&1 || true
     const current = this.data.forwards.get(port);
     if (current) {
       const state = await current.isRunning();
-      await nginx.proxyRouteIsRunning({
+      await this.nginx.proxyRouteIsRunning({
         name: `vite-${port}`,
         hostname: this.hostname(port),
         pathname: "/",
@@ -201,7 +206,7 @@ pm2 save --force >/dev/null 2>&1 || true
       await this.publicVerify(port, false, "/__vite_ping");
       return;
     }
-    const registeredForward = forward.register({
+    const registeredForward = this.forward.register({
       name: `vite-${port}`,
       local: { host: "127.0.0.1", port },
       remote: { host: "127.0.0.1", port: 0 },
@@ -209,7 +214,7 @@ pm2 save --force >/dev/null 2>&1 || true
     const state = await registeredForward.isRunning();
     this.data.forwards.set(port, registeredForward);
     try {
-      await nginx.proxyRouteIsRunning({
+      await this.nginx.proxyRouteIsRunning({
         name: `vite-${port}`,
         hostname: this.hostname(port),
         pathname: "/",
@@ -232,16 +237,16 @@ pm2 save --force >/dev/null 2>&1 || true
     }
     const remotePath = `${store.getState().public.remoteRoot}/vite-${port}`;
     const kindPath = `${remotePath}/.extends-ssh-kind`;
-    const kind = (await publicRuntime.execute(
+    const kind = (await this.ssh.execute(
       `test -f ${this.shell(kindPath)} && cat ${this.shell(kindPath)} || true`,
     )).stdout.trim();
     if (kind === "static") await this.staticRoute({ port, remotePath });
     if (kind === "node") {
-      const result = await publicRuntime.execute(
+      const result = await this.ssh.execute(
         `cat ${this.shell(`${remotePath}/.extends-ssh-upstream-port`)}`,
       );
       const upstreamPort = this.portRequired(Number(result.stdout.trim()));
-      await nginx.proxyRouteIsRunning({
+      await this.nginx.proxyRouteIsRunning({
         name: `vite-${port}`,
         hostname: this.hostname(port),
         pathname: "/",
@@ -249,7 +254,7 @@ pm2 save --force >/dev/null 2>&1 || true
       });
     }
     if (!kind) {
-      await nginx.routeClose({
+      await this.nginx.routeClose({
         name: `vite-${port}`,
         hostname: this.hostname(port),
       });
@@ -270,12 +275,12 @@ pm2 save --force >/dev/null 2>&1 || true
     const localZip = path.join(os.tmpdir(), `extends-ssh-${port}-${process.pid}.zip`);
     try {
       await compressing.zip.compressDir(localPath, localZip, { ignoreBase: true });
-      await publicRuntime.execute(
+      await this.ssh.execute(
         `rm -rf ${this.shell(remotePath)} && mkdir -p ${this.shell(remoteSource)}`,
       );
-      await sftp.remoteUpload(localZip, remoteZip);
+      await this.sftp.remoteUpload(localZip, remoteZip);
       const unzip = `unzip -oq ${this.shell(remoteZip)} -d ${this.shell(remoteSource)}`;
-      await publicRuntime.execute(`${unzip} && rm -f ${this.shell(remoteZip)}`);
+      await this.ssh.execute(`${unzip} && rm -f ${this.shell(remoteZip)}`);
       return remotePath;
     } finally {
       await fs.promises.rm(localZip, { force: true });
@@ -371,11 +376,11 @@ pm2 save --force >/dev/null 2>&1 || true
   private async staticRoute(
     { port, remotePath }: { port: number; remotePath: string },
   ): Promise<void> {
-    await publicRuntime.execute(`
+    await this.ssh.execute(`
 set -e
 printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
 `);
-    await nginx.staticRouteIsRunning({
+    await this.nginx.staticRouteIsRunning({
       name: `vite-${port}`,
       hostname: this.hostname(port),
       pathname: "/",
@@ -414,8 +419,8 @@ printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
   }
 
   private async connect(): Promise<void> {
-    await publicRuntime.sshIsRunning();
-    await publicRuntime.execute(`mkdir -p ${this.shell(store.getState().public.remoteRoot)}`);
+    await this.ssh.isRunning();
+    await this.ssh.execute(`mkdir -p ${this.shell(store.getState().public.remoteRoot)}`);
   }
 
   private portRequired(port: unknown): number {
@@ -426,7 +431,15 @@ printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
   }
 
   private hostname(port: number): string {
-    return `vite-${this.portRequired(port)}.dev.${nginx.state.domain}`;
+    return `vite-${this.portRequired(port)}.dev.${this.domain()}`;
+  }
+
+  private domain(): string {
+    const domain = store.getState().public.domain.trim().toLowerCase();
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain)) {
+      throw new TypeError(`Vite 公网根域名无效: ${domain}`);
+    }
+    return domain;
   }
 
   private shell(value: string): string {
@@ -434,5 +447,3 @@ printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
   }
 
 }
-
-export default new Vite();

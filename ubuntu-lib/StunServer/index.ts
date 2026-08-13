@@ -1,18 +1,19 @@
 import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
-import publicRuntime from "../Public/index.ts";
+import type Ssh from "../Ssh/index.ts";
 import store from "../store.ts";
 
-class StunServer {
+export default abstract class StunServer {
+  protected abstract readonly ssh: Ssh;
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
-    const { public: publicState, stunServer } = store.getState();
+    const { ssh, stunServer } = store.getState();
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
       throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
     }
     return {
-      host: publicState.ssh.host,
+      host: ssh.host,
       port: stunServer.port,
       secure: false as const,
     };
@@ -23,7 +24,7 @@ class StunServer {
 
     const executionPromise = (async () => {
       const state = this.state;
-      await publicRuntime.execute(`
+      await this.ssh.execute(`
 set -e
 docker info >/dev/null
 if docker inspect coturn >/dev/null 2>&1; then
@@ -114,5 +115,3 @@ ss -lun | grep -Eq ':${state.port}[[:space:]]'
     });
   }
 }
-
-export default new StunServer();

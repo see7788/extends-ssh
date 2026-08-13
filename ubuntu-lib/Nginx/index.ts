@@ -1,4 +1,4 @@
-import publicRuntime from "../Public/index.ts";
+import type Ssh from "../Ssh/index.ts";
 import store from "../store.ts";
 
 type ProxyRoute = {
@@ -18,7 +18,8 @@ type StaticRoute = {
 
 type Route = Pick<ProxyRoute, "name" | "hostname">;
 
-class Nginx {
+export default abstract class Nginx {
+  protected abstract readonly ssh: Ssh;
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
@@ -92,7 +93,7 @@ class Nginx {
     const name = this.nameRequired(route.name);
     const hostname = this.hostnameRequired(route.hostname);
     await this.isRemoteRunning();
-    await publicRuntime.execute(`
+    await this.ssh.execute(`
 set -e
 rm -f ${this.shell(this.routePath(hostname, name))} ${this.shell(this.legacyPath(name))}
 /www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
@@ -101,7 +102,7 @@ rm -f ${this.shell(this.routePath(hostname, name))} ${this.shell(this.legacyPath
   }
 
   private async remoteRunningEnsure(): Promise<void> {
-    await publicRuntime.execute(`
+    await this.ssh.execute(`
 set -e
 NGINX=/www/server/nginx/sbin/nginx
 test -x "$NGINX"
@@ -125,7 +126,7 @@ ufw reload >/dev/null
     await this.isRemoteRunning();
     const hostnamePath = this.hostnamePath(route.hostname);
     const routeDirectory = this.routeDirectory(route.hostname);
-    await publicRuntime.execute(`
+    await this.ssh.execute(`
 set -e
 mkdir -p ${this.shell(routeDirectory)}
 rm -f ${this.shell(this.legacyPath(route.name))}
@@ -224,5 +225,3 @@ HTTPS
     return `'${value.replaceAll("'", `'"'"'`)}'`;
   }
 }
-
-export default new Nginx();

@@ -1,5 +1,5 @@
 import net from "node:net";
-import publicRuntime from "../Public/index.ts";
+import type Ssh from "../Ssh/index.ts";
 
 type ForwardRegistration = {
   name: string;
@@ -44,7 +44,8 @@ type ForwardData = {
   sshRevision?: number;
 };
 
-class Forward {
+export default abstract class Forward {
+  protected abstract readonly ssh: Ssh;
   private readonly forwards = new Map<string, ForwardData>();
 
   public register(registrationInput: ForwardRegistration): RegisteredForward {
@@ -95,14 +96,14 @@ class Forward {
 
   private async forwardRunningEnsure(forward: ForwardData): Promise<ForwardRunningState> {
     try {
-      await publicRuntime.sshIsRunning();
-      if (forward.handle && forward.sshRevision === publicRuntime.sshRevision) {
+      await this.ssh.isRunning();
+      if (forward.handle && forward.sshRevision === this.ssh.revision) {
         return { remotePort: forward.handle.port };
       }
 
       this.connectionsClose(forward);
       await forward.handle?.dispose().catch(() => undefined);
-      forward.handle = await publicRuntime.ssh.forwardIn(
+      forward.handle = await this.ssh.client.forwardIn(
         forward.state.remote.host,
         forward.state.remote.port,
         (_details, accept, reject) => {
@@ -130,7 +131,7 @@ class Forward {
           });
         },
       );
-      forward.sshRevision = publicRuntime.sshRevision;
+      forward.sshRevision = this.ssh.revision;
       return { remotePort: forward.handle.port };
     } catch (error) {
       forward.handle = undefined;
@@ -195,5 +196,3 @@ class Forward {
     return port;
   }
 }
-
-export default new Forward();
