@@ -4,16 +4,22 @@
 
 ```ts
 import ubuntuStore from "src-lib/index.ts";
+import { vitePlugin } from "src-lib/index.ts";
 
 await ubuntuStore.getState().SshActions.isRunning();
+
+export default {
+  plugins: [vitePlugin.forward(), vitePlugin.static()],
+};
 ```
 
 ## 项目结构
 
 ```text
 src-lib/
-├── index.ts                         # 公共入口
-│   └── default                      # 交付组合后的 Zustand vanilla store
+├── index.ts                         # 公共入口；组合并导出 vitePlugin
+│   ├── default                      # 交付组合后的 Zustand vanilla store
+│   └── vitePlugin                   # forward、static、node
 ├── store.ts                         # 只组合切片并注入配置持久化
 ├── Public/
 │   └── store.ts                     # 公共配置生产者
@@ -48,12 +54,9 @@ src-lib/
 ├── StunServer/
 │   └── store.ts                     # STUN 配置与 Coturn 服务生产者
 │       └── StunServer、StunServerActions # 配置、isRemoteRunning、vitePlugin
-├── Webrtcsignaling/
+└── Webrtcsignaling/
 │   └── store.ts                     # 私有信令配置、部署与专属 Vite 插件
 │       └── Webrtcsignaling、WebrtcsignalingActions # 配置、register、isRemoteRunning、vitePlugin
-└── Vite/
-    └── store.ts                     # 无状态的构建流程消费者切片
-        └── ViteActions              # forwardPlugin、staticPlugin、nodePlugin
 ```
 
 配置持久化到 `~/.extends-ssh/.zustand/src-lib.json`。actions、NodeSSH、转发连接、子进程和运行中的 Promise 不进入持久化数据。

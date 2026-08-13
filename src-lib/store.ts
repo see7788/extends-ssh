@@ -9,7 +9,6 @@ import publicStore from "./Public/store.ts";
 import sftpStore from "./Sftp/store.ts";
 import sshStore from "./Ssh/store.ts";
 import stunServerStore from "./StunServer/store.ts";
-import viteStore from "./Vite/store.ts";
 import webrtcsignalingStore from "./Webrtcsignaling/store.ts";
 import cwdPersist from "extends-zustand/cwdPersist";
 import { homedir } from "node:os";
@@ -29,8 +28,7 @@ type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof nginxStore>
   & ReturnType<typeof peerjsStore>
   & ReturnType<typeof stunServerStore>
-  & ReturnType<typeof webrtcsignalingStore>
-  & ReturnType<typeof viteStore>;
+  & ReturnType<typeof webrtcsignalingStore>;
 
 const store = createStore<Store>()(
   cwdPersist<Store, [], [["zustand/immer", never]]>({
@@ -48,7 +46,6 @@ const store = createStore<Store>()(
       ...peerjsStore(set, get, api),
       ...stunServerStore(set, get, api),
       ...webrtcsignalingStore(set, get, api),
-      ...viteStore(set, get, api),
     })),
     name: "src-lib",
   }),
