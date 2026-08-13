@@ -1,3 +1,7 @@
+import fs, { existsSync } from "node:fs";
+import { createRequire, isBuiltin } from "node:module";
+import path from "node:path";
+import { init, parse } from "es-module-lexer";
 import type Apt from "../Apt/index.ts";
 import type Ssh from "../Ssh/index.ts";
 
@@ -20,6 +24,110 @@ export default abstract class Nodejs {
     });
     this.remoteRunningPromise = remoteRunningPromise;
     return remoteRunningPromise;
+  }
+
+  /** 根据 Node 构建产物生成远端安装使用的 package.json。 */
+  public async deploymentPackageCreate(
+    buildPath: string,
+    projectPath: string,
+  ): Promise<{ content: string; name: string }> {
+    const packagePath = path.resolve(projectPath, "package.json");
+    if (!existsSync(packagePath)) throw new Error(`Node 项目 package.json 不存在: ${packagePath}`);
+    const sourcePackage = JSON.parse(await fs.promises.readFile(packagePath, "utf8")) as {
+      name?: string;
+      type?: string;
+      dependencies?: Record<string, string>;
+    };
+    if (!sourcePackage.name || !/^[A-Za-z0-9._~-]+$/.test(sourcePackage.name)) {
+      throw new TypeError(
+        `Node 项目 package.json name 不是单一路径名称: ${String(sourcePackage.name)}`,
+      );
+    }
+    const dependencies: Record<string, string> = {};
+    const require = createRequire(packagePath);
+    const packageResolve = (name: string): string | undefined => {
+      let searchPath = projectPath;
+      while (true) {
+        const candidate = path.join(searchPath, "node_modules", name, "package.json");
+        if (existsSync(candidate)) return candidate;
+        const parentPath = path.dirname(searchPath);
+        if (parentPath === searchPath) break;
+        searchPath = parentPath;
+      }
+      try {
+        let packageDirectory = path.dirname(require.resolve(name));
+        while (path.dirname(packageDirectory) !== packageDirectory) {
+          const candidate = path.join(packageDirectory, "package.json");
+          if (existsSync(candidate)) {
+            const current = JSON.parse(fs.readFileSync(candidate, "utf8")) as { name?: string };
+            if (current.name === name) return candidate;
+          }
+          packageDirectory = path.dirname(packageDirectory);
+        }
+      } catch {
+        return;
+      }
+    };
+    const externalPackages = new Set<string>();
+    await init;
+    const files = await fs.promises.readdir(buildPath, { recursive: true });
+    for (const file of files.filter(value => /\.[cm]?js$/.test(value))) {
+      const source = await fs.promises.readFile(path.resolve(buildPath, file), "utf8");
+      for (const importEntry of parse(source)[0]) {
+        const specifier = importEntry.n;
+        if (
+          !specifier
+          || specifier.startsWith(".")
+          || specifier.startsWith("/")
+          || specifier.startsWith("#")
+          || isBuiltin(specifier)
+        ) continue;
+        externalPackages.add(specifier.startsWith("@")
+          ? specifier.split("/").slice(0, 2).join("/")
+          : specifier.split("/")[0]);
+      }
+    }
+    const packageNames = Array.from(externalPackages);
+    for (let packageIndex = 0; packageIndex < packageNames.length; packageIndex += 1) {
+      const name = packageNames[packageIndex];
+      const configuredVersion = sourcePackage.dependencies?.[name];
+      if (configuredVersion?.startsWith("workspace:")) {
+        throw new Error(`Node 构建产物仍依赖 workspace 包 ${name}`);
+      }
+      const dependencyPath = packageResolve(name);
+      if (!dependencyPath) throw new Error(`无法定位 Node 外部依赖: ${name}`);
+      const dependency = JSON.parse(await fs.promises.readFile(dependencyPath, "utf8")) as {
+        version?: string;
+        peerDependencies?: Record<string, string>;
+      };
+      if (!dependency.version) throw new Error(`无法确定 Node 外部依赖版本: ${name}`);
+      dependencies[name] = configuredVersion ?? dependency.version;
+      for (const peerName of Object.keys(dependency.peerDependencies ?? {})) {
+        if (packageResolve(peerName) && !externalPackages.has(peerName)) {
+          externalPackages.add(peerName);
+          packageNames.push(peerName);
+        }
+      }
+    }
+    return {
+      content: `${JSON.stringify({
+        name: sourcePackage.name,
+        private: true,
+        type: sourcePackage.type ?? "module",
+        dependencies,
+      }, null, 2)}\n`,
+      name: sourcePackage.name,
+    };
+  }
+
+  /** 在远端 Node 项目中安装生产依赖。 */
+  public async dependenciesRemoteInstall(projectPath: string): Promise<void> {
+    await this.isRemoteRunning();
+    await this.ssh.execute(`
+set -e
+cd ${this.shell(projectPath)}
+npm install --omit=dev --no-package-lock
+`);
   }
 
   private async remoteRunningEnsure(): Promise<void> {
@@ -60,5 +168,9 @@ done
 /usr/local/bin/node -e "if (process.versions.node !== '$NODE_VERSION') process.exit(1)"
 /usr/local/bin/npm --version >/dev/null
 `);
+  }
+
+  private shell(value: string): string {
+    return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }

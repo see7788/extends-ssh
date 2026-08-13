@@ -87,12 +87,11 @@ class StunServerRuntime extends StunServer {
 
 class ViteRuntime extends Vite {
   constructor(
-    protected readonly apt: Apt,
     protected readonly forward: Forward,
     protected readonly nginx: Nginx,
+    protected readonly nodejs: Nodejs,
     protected readonly pm2: Pm2,
     protected readonly sftp: Sftp,
-    protected readonly ssh: Ssh,
   ) {
     super();
   }
@@ -132,12 +131,11 @@ class Ubuntu {
   public readonly stunServer = new StunServerRuntime(this.docker, this.ssh);
   /** 让 Vite 配置消费开发隧道和构建发布场景。 */
   public readonly vite = new ViteRuntime(
-    this.apt,
     this.forward,
     this.nginx,
+    this.nodejs,
     this.pm2,
     this.sftp,
-    this.ssh,
   );
   /** 交付 WebRTC 信令连接数据并确保信令服务可用。 */
   public readonly webrtcsignaling = new WebrtcsignalingRuntime(
