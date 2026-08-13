@@ -1,17 +1,23 @@
+import ForwardLoc from "./ForwardLoc/index.ts";
+import ForwardRemote from "./ForwardRemote/index.ts";
+import StunServer from "./StunServer/index.ts";
 import Vite from "./Vite/index.ts";
 import WebrtcProxy from "./WebrtcProxy/index.ts";
 import Pm2 from "./Pm2.ts";
-import Services from "./Service/index.ts";
 
 class Ubuntu {
-  /** 让具体服务登记发布定义并取得自动保障生命周期。 */
-  public readonly services = new Services();
+  /** 确保本地端口通过 SSH 远端监听保持可访问。 */
+  public readonly forwardLoc = new ForwardLoc();
+  /** 确保远端服务按目标版本发布并健康运行。 */
+  public readonly forwardRemote = new ForwardRemote();
   /** 让具体业务取得并维护远程 PM2 进程数据。 */
   public readonly pm2 = new Pm2();
+  /** 交付 STUN 连接数据并确保 Coturn 服务可用。 */
+  public readonly stunServer = new StunServer();
   /** 让 Vite 配置消费开发隧道和构建发布场景。 */
-  public readonly vite = new Vite();
-  /** 让 WebRTC 业务取得并保障信令与 STUN 数据。 */
-  public readonly webrtcProxy = new WebrtcProxy(this.services);
+  public readonly vite = new Vite(this.forwardLoc);
+  /** 交付 WebRTC 信令连接数据并确保信令服务可用。 */
+  public readonly webrtcProxy = new WebrtcProxy(this.forwardRemote);
 }
 
 export default new Ubuntu();

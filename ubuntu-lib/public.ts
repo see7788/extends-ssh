@@ -5,7 +5,12 @@ export default class Public {
   public readonly ssh = new NodeSSH();
   private readonly data = {
     connected: false,
+    sshRevision: 0,
   };
+
+  public get sshRevision(): number {
+    return this.data.sshRevision;
+  }
 
   /** 确保当前实例持有经过远程命令验证的 SSH 会话。 */
   public async sshIsRunning(): Promise<void> {
@@ -27,6 +32,7 @@ export default class Public {
       });
     }
     this.data.connected = true;
+    this.data.sshRevision += 1;
   }
 
   /** 执行远程命令并交付包含输出和退出码的成功结果。 */
@@ -58,5 +64,6 @@ systemctl enable pm2-root >/dev/null
   public dispose(): void {
     this.ssh.dispose();
     this.data.connected = false;
+    this.data.sshRevision += 1;
   }
 }

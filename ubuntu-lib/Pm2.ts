@@ -1,7 +1,7 @@
 import Public from "./public.ts";
 import store from "./store.ts";
 
-export type Pm2ProcessState = {
+type Pm2ProcessState = {
   id: number;
   name: string;
   pid: number;

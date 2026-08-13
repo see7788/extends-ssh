@@ -1,29 +1,17 @@
 import type { ImmerStateCreator } from "extends-zustand/immerStateCreator";
 
-export type WebrtcProxyStore = {
+type WebrtcProxyStore = {
   webrtcProxy: {
-    peerServer: {
-      port: number;
-      path: string;
-    };
-    stunServer: {
-      port: number;
-    };
+    port: number;
+    path: string;
   };
 };
 
-const store = <T extends object = {}>(
-  ..._args: Parameters<ImmerStateCreator<WebrtcProxyStore, T>>
-): WebrtcProxyStore => ({
+const webrtcProxyStore: ImmerStateCreator<WebrtcProxyStore> = () => ({
   webrtcProxy: {
-    peerServer: {
-      port: 9001,
-      path: "/signal",
-    },
-    stunServer: {
-      port: 3478,
-    },
+    port: 9001,
+    path: "/signal",
   },
 });
 
-export default store;
+export default webrtcProxyStore;

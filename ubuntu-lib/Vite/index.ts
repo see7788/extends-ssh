@@ -1,24 +1,23 @@
 import fs, { existsSync } from "node:fs";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createRequire, isBuiltin } from "node:module";
 import compressing from "compressing";
 import { init, parse } from "es-module-lexer";
 import type { Plugin, ResolvedConfig, ViteDevServer } from "vite";
+import ForwardLoc from "../ForwardLoc/index.ts";
 import Public from "../public.ts";
 import store from "../store.ts";
 
-type Forward = {
-  port: number;
-  dispose(): Promise<void>;
-};
+type LocForward = ReturnType<ForwardLoc["register"]>;
 
 export default class Vite {
   private readonly runtime = new Public();
   private readonly data = {
-    forwards: new Map<number, Forward>(),
+    forwards: new Map<number, LocForward>(),
   };
+
+  constructor(private readonly forwardLoc: ForwardLoc) {}
 
   /** 为 Hono 与其 React 项目建立开发隧道，并在构建后发布 Node 服务。 */
   public honoReact(): Plugin {
@@ -188,32 +187,24 @@ pm2 save --force >/dev/null 2>&1 || true
   private async tunnelStart(port: number): Promise<void> {
     const current = this.data.forwards.get(port);
     if (current) {
+      const state = await current.isRunning();
+      await this.proxyRoute({ port, upstreamPort: this.portRequired(state.remotePort) });
       await this.publicVerify(port, false, "/__vite_ping");
       return;
     }
-    await this.connect();
-    const forward = await this.runtime.ssh.forwardIn("127.0.0.1", 0, (_details, accept, reject) => {
-      const localSocket = net.createConnection({ host: "127.0.0.1", port });
-      const failed = () => {
-        localSocket.destroy();
-        reject();
-      };
-      localSocket.once("error", failed);
-      localSocket.once("connect", () => {
-        localSocket.off("error", failed);
-        const channel = accept();
-        localSocket.on("error", () => channel.destroy());
-        channel.on("error", () => localSocket.destroy());
-        channel.pipe(localSocket).pipe(channel);
-      });
+    const forward = this.forwardLoc.register({
+      name: `vite-${port}`,
+      local: { host: "127.0.0.1", port },
+      remote: { host: "127.0.0.1", port: 0 },
     });
+    const state = await forward.isRunning();
     this.data.forwards.set(port, forward);
     try {
-      await this.proxyRoute({ port, upstreamPort: forward.port });
+      await this.proxyRoute({ port, upstreamPort: this.portRequired(state.remotePort) });
       await this.publicVerify(port, false, "/__vite_ping");
     } catch (error) {
       this.data.forwards.delete(port);
-      await forward.dispose();
+      await forward.close();
       await this.tunnelClose(port);
       throw error;
     }
@@ -223,7 +214,7 @@ pm2 save --force >/dev/null 2>&1 || true
     const forward = this.data.forwards.get(port);
     if (forward) {
       this.data.forwards.delete(port);
-      await forward.dispose();
+      await forward.close();
     }
     const remotePath = `${store.getState().vite.remoteRoot}/vite-${port}`;
     const kindPath = `${remotePath}/.extends-ssh-kind`;
@@ -500,8 +491,8 @@ ufw reload >/dev/null
     await this.runtime.execute(`mkdir -p ${this.shell(store.getState().vite.remoteRoot)}`);
   }
 
-  private portRequired(port: number): number {
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  private portRequired(port: unknown): number {
+    if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error(`端口必须是 1-65535 的整数，收到 ${String(port)}`);
     }
     return port;
