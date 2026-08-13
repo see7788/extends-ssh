@@ -1,19 +1,17 @@
-import Nginx from "../Nginx/index.ts";
-import Public from "../Public/index.ts";
+import nginx from "../Nginx/index.ts";
+import publicRuntime from "../Public/index.ts";
 import store from "../store.ts";
 
-export default class Peerjs {
+class Peerjs {
   private remoteRunningPromise?: Promise<void>;
-
-  constructor(private readonly nginx: Nginx) {}
 
   public get state() {
     const { peerjs } = store.getState();
     return {
-      host: `webrtc.${this.nginx.state.domain}`,
-      port: this.nginx.state.httpsPort,
+      host: `webrtc.${nginx.state.domain}`,
+      port: nginx.state.httpsPort,
       path: peerjs.pathname,
-      secure: this.nginx.state.secure,
+      secure: nginx.state.secure,
       key: peerjs.key,
     };
   }
@@ -32,9 +30,7 @@ export default class Peerjs {
   private async remoteRunningEnsure(): Promise<void> {
     const { peerjs } = store.getState();
     const configuration = `${peerjs.image}|${peerjs.listenPort}|${peerjs.pathname}|${peerjs.key}`;
-    const runtime = new Public();
-    try {
-      await runtime.execute(`
+    await publicRuntime.execute(`
 set -e
 docker info >/dev/null
 if docker inspect peerjs >/dev/null 2>&1; then
@@ -65,12 +61,9 @@ done
 docker logs --tail 40 peerjs >&2 || true
 exit 1
 `);
-    } finally {
-      runtime.dispose();
-    }
 
     const state = this.state;
-    await this.nginx.proxyRouteIsRunning({
+    await nginx.proxyRouteIsRunning({
       name: "peerjs",
       hostname: state.host,
       pathname: state.path,
@@ -89,3 +82,5 @@ exit 1
     return `'${value.replaceAll("'", `'"'"'`)}'`;
   }
 }
+
+export default new Peerjs();

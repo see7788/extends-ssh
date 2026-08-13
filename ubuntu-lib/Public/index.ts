@@ -11,17 +11,11 @@ import {
   relative,
   resolve,
 } from "node:path";
-import Sftp from "../Sftp/index.ts";
 import store from "../store.ts";
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
 
-export default class Public {
+class Public {
   public readonly ssh = new NodeSSH();
-  public readonly sftp = new Sftp(
-    this.ssh,
-    () => this.sshIsRunning(),
-    () => this.dispose(),
-  );
   private readonly data = {
     connected: false,
     sshRevision: 0,
@@ -297,3 +291,5 @@ trap - ERR
     return `'${value.replaceAll("'", `'"'"'`)}'`;
   }
 }
+
+export default new Public();

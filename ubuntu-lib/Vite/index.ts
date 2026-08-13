@@ -5,23 +5,19 @@ import { createRequire, isBuiltin } from "node:module";
 import compressing from "compressing";
 import { init, parse } from "es-module-lexer";
 import type { Plugin, ResolvedConfig, ViteDevServer } from "vite";
-import Forward from "../Forward/index.ts";
-import Nginx from "../Nginx/index.ts";
-import Public from "../Public/index.ts";
+import forward from "../Forward/index.ts";
+import nginx from "../Nginx/index.ts";
+import pm2 from "../Pm2/index.ts";
+import publicRuntime from "../Public/index.ts";
+import sftp from "../Sftp/index.ts";
 import store from "../store.ts";
 
-type RegisteredForward = ReturnType<Forward["register"]>;
+type RegisteredForward = ReturnType<typeof forward.register>;
 
-export default class Vite {
-  private readonly runtime = new Public();
+class Vite {
   private readonly data = {
     forwards: new Map<number, RegisteredForward>(),
   };
-
-  constructor(
-    private readonly forward: Forward,
-    private readonly nginx: Nginx,
-  ) {}
 
   /** 为 Hono 与其 React 项目建立开发隧道，并在构建后发布 Node 服务。 */
   public honoReact(): Plugin {
@@ -52,7 +48,7 @@ export default class Vite {
       enforce: "post",
       config: (_config, environment) => environment.command === "serve" ? ({
           server: {
-            allowedHosts: [`.dev.${this.nginx.state.domain}`],
+            allowedHosts: [`.dev.${nginx.state.domain}`],
             host: "127.0.0.1",
             strictPort: true,
           },
@@ -69,34 +65,33 @@ export default class Vite {
         const config = data.configurations.pop();
         if (!config) return;
         if (config !== data.rootConfig) return;
-        try {
-          if (scene === "honoReact") {
-            const port = this.portRequired(config.server.port);
-            const projectRoot = config.configFile ? path.dirname(config.configFile) : process.cwd();
-            const packagePath = path.resolve(projectRoot, "package.json");
-            if (!existsSync(packagePath)) throw new Error(`项目 package.json 不存在: ${packagePath}`);
-            const projectPackage = JSON.parse(
-              await fs.promises.readFile(packagePath, "utf8"),
-            ) as { name?: string };
-            if (!projectPackage.name || !/^[A-Za-z0-9._~-]+$/.test(projectPackage.name)) {
-              throw new Error(
-                `项目 package.json name 不是单一路径名称: ${String(projectPackage.name)}`,
-              );
-            }
-            const localPath = path.resolve(projectRoot, "dist");
-            const entry = path.resolve(localPath, projectPackage.name, "index.js");
-            if (!existsSync(entry)) throw new Error(`Node 构建入口不存在: ${entry}`);
-            const command = `node dist/${projectPackage.name}/index.js`;
-            const deploymentPackage = await this.packageCreate({ localPath, projectRoot, port });
-            try {
-              const remotePath = await this.upload({ localPath, port, preserveDirectory: true });
-              await this.runtime.sftp.remoteUpload(
-                deploymentPackage,
-                `${remotePath}/package.json`,
-              );
-              await this.runtime.pm2IsRunning();
-              const processName = `vite-node-${port}`;
-              const startResult = await this.runtime.execute(`
+        if (scene === "honoReact") {
+          const port = this.portRequired(config.server.port);
+          const projectRoot = config.configFile ? path.dirname(config.configFile) : process.cwd();
+          const packagePath = path.resolve(projectRoot, "package.json");
+          if (!existsSync(packagePath)) throw new Error(`项目 package.json 不存在: ${packagePath}`);
+          const projectPackage = JSON.parse(
+            await fs.promises.readFile(packagePath, "utf8"),
+          ) as { name?: string };
+          if (!projectPackage.name || !/^[A-Za-z0-9._~-]+$/.test(projectPackage.name)) {
+            throw new Error(
+              `项目 package.json name 不是单一路径名称: ${String(projectPackage.name)}`,
+            );
+          }
+          const localPath = path.resolve(projectRoot, "dist");
+          const entry = path.resolve(localPath, projectPackage.name, "index.js");
+          if (!existsSync(entry)) throw new Error(`Node 构建入口不存在: ${entry}`);
+          const command = `node dist/${projectPackage.name}/index.js`;
+          const deploymentPackage = await this.packageCreate({ localPath, projectRoot, port });
+          try {
+            const remotePath = await this.upload({ localPath, port, preserveDirectory: true });
+            await sftp.remoteUpload(
+              deploymentPackage,
+              `${remotePath}/package.json`,
+            );
+            await pm2.isRemoteRunning();
+            const processName = `vite-node-${port}`;
+            const startResult = await publicRuntime.execute(`
 set -e
 pm2 delete ${this.shell(processName)} >/dev/null 2>&1 || true
 pm2 delete ${this.shell(`vite-static-${port}`)} >/dev/null 2>&1 || true
@@ -134,34 +129,31 @@ pm2 logs ${this.shell(processName)} --lines 40 --nostream >&2 || true
 echo '无法从 PM2 进程树确定唯一监听端口' >&2
 exit 1
 `);
-              const upstreamMatch = startResult.stdout.match(/EXTENDS_SSH_UPSTREAM=(\d+)/);
-              const upstreamPort = this.portRequired(Number(upstreamMatch?.[1]));
-              await this.nginx.proxyRouteIsRunning({
-                name: `vite-${port}`,
-                hostname: this.hostname(port),
-                pathname: "/",
-                upstreamPort,
-              });
-              await this.publicVerify(port, true);
-            } finally {
-              await fs.promises.rm(deploymentPackage, { force: true });
-            }
+            const upstreamMatch = startResult.stdout.match(/EXTENDS_SSH_UPSTREAM=(\d+)/);
+            const upstreamPort = this.portRequired(Number(upstreamMatch?.[1]));
+            await nginx.proxyRouteIsRunning({
+              name: `vite-${port}`,
+              hostname: this.hostname(port),
+              pathname: "/",
+              upstreamPort,
+            });
+            await this.publicVerify(port, true);
+          } finally {
+            await fs.promises.rm(deploymentPackage, { force: true });
           }
-          if (scene === "react") {
-            const localPath = path.resolve(config.root, config.build.outDir);
-            if (!existsSync(localPath)) throw new Error(`Vite 构建目录不存在: ${localPath}`);
-            const port = this.portRequired(config.server.port);
-            const remotePath = await this.upload({ localPath, port });
-            await this.runtime.execute(`
+        }
+        if (scene === "react") {
+          const localPath = path.resolve(config.root, config.build.outDir);
+          if (!existsSync(localPath)) throw new Error(`Vite 构建目录不存在: ${localPath}`);
+          const port = this.portRequired(config.server.port);
+          const remotePath = await this.upload({ localPath, port });
+          await publicRuntime.execute(`
 pm2 delete ${this.shell(`vite-static-${port}`)} >/dev/null 2>&1 || true
 pm2 delete ${this.shell(`vite-node-${port}`)} >/dev/null 2>&1 || true
 pm2 save --force >/dev/null 2>&1 || true
 `);
-            await this.staticRoute({ port, remotePath });
-            await this.publicVerify(port);
-          }
-        } finally {
-          this.runtime.dispose();
+          await this.staticRoute({ port, remotePath });
+          await this.publicVerify(port);
         }
       },
     };
@@ -192,7 +184,7 @@ pm2 save --force >/dev/null 2>&1 || true
       void (async () => {
         await data.startPromise?.catch(() => undefined);
         await this.tunnelClose(port);
-      })().finally(() => this.runtime.dispose());
+      })();
     });
   }
 
@@ -200,7 +192,7 @@ pm2 save --force >/dev/null 2>&1 || true
     const current = this.data.forwards.get(port);
     if (current) {
       const state = await current.isRunning();
-      await this.nginx.proxyRouteIsRunning({
+      await nginx.proxyRouteIsRunning({
         name: `vite-${port}`,
         hostname: this.hostname(port),
         pathname: "/",
@@ -209,15 +201,15 @@ pm2 save --force >/dev/null 2>&1 || true
       await this.publicVerify(port, false, "/__vite_ping");
       return;
     }
-    const forward = this.forward.register({
+    const registeredForward = forward.register({
       name: `vite-${port}`,
       local: { host: "127.0.0.1", port },
       remote: { host: "127.0.0.1", port: 0 },
     });
-    const state = await forward.isRunning();
-    this.data.forwards.set(port, forward);
+    const state = await registeredForward.isRunning();
+    this.data.forwards.set(port, registeredForward);
     try {
-      await this.nginx.proxyRouteIsRunning({
+      await nginx.proxyRouteIsRunning({
         name: `vite-${port}`,
         hostname: this.hostname(port),
         pathname: "/",
@@ -226,7 +218,7 @@ pm2 save --force >/dev/null 2>&1 || true
       await this.publicVerify(port, false, "/__vite_ping");
     } catch (error) {
       this.data.forwards.delete(port);
-      await forward.close();
+      await registeredForward.close();
       await this.tunnelClose(port);
       throw error;
     }
@@ -240,16 +232,16 @@ pm2 save --force >/dev/null 2>&1 || true
     }
     const remotePath = `${store.getState().public.remoteRoot}/vite-${port}`;
     const kindPath = `${remotePath}/.extends-ssh-kind`;
-    const kind = (await this.runtime.execute(
+    const kind = (await publicRuntime.execute(
       `test -f ${this.shell(kindPath)} && cat ${this.shell(kindPath)} || true`,
     )).stdout.trim();
     if (kind === "static") await this.staticRoute({ port, remotePath });
     if (kind === "node") {
-      const result = await this.runtime.execute(
+      const result = await publicRuntime.execute(
         `cat ${this.shell(`${remotePath}/.extends-ssh-upstream-port`)}`,
       );
       const upstreamPort = this.portRequired(Number(result.stdout.trim()));
-      await this.nginx.proxyRouteIsRunning({
+      await nginx.proxyRouteIsRunning({
         name: `vite-${port}`,
         hostname: this.hostname(port),
         pathname: "/",
@@ -257,7 +249,7 @@ pm2 save --force >/dev/null 2>&1 || true
       });
     }
     if (!kind) {
-      await this.nginx.routeClose({
+      await nginx.routeClose({
         name: `vite-${port}`,
         hostname: this.hostname(port),
       });
@@ -278,12 +270,12 @@ pm2 save --force >/dev/null 2>&1 || true
     const localZip = path.join(os.tmpdir(), `extends-ssh-${port}-${process.pid}.zip`);
     try {
       await compressing.zip.compressDir(localPath, localZip, { ignoreBase: true });
-      await this.runtime.execute(
+      await publicRuntime.execute(
         `rm -rf ${this.shell(remotePath)} && mkdir -p ${this.shell(remoteSource)}`,
       );
-      await this.runtime.sftp.remoteUpload(localZip, remoteZip);
+      await sftp.remoteUpload(localZip, remoteZip);
       const unzip = `unzip -oq ${this.shell(remoteZip)} -d ${this.shell(remoteSource)}`;
-      await this.runtime.execute(`${unzip} && rm -f ${this.shell(remoteZip)}`);
+      await publicRuntime.execute(`${unzip} && rm -f ${this.shell(remoteZip)}`);
       return remotePath;
     } finally {
       await fs.promises.rm(localZip, { force: true });
@@ -379,11 +371,11 @@ pm2 save --force >/dev/null 2>&1 || true
   private async staticRoute(
     { port, remotePath }: { port: number; remotePath: string },
   ): Promise<void> {
-    await this.runtime.execute(`
+    await publicRuntime.execute(`
 set -e
 printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
 `);
-    await this.nginx.staticRouteIsRunning({
+    await nginx.staticRouteIsRunning({
       name: `vite-${port}`,
       hostname: this.hostname(port),
       pathname: "/",
@@ -422,8 +414,8 @@ printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
   }
 
   private async connect(): Promise<void> {
-    await this.runtime.sshIsRunning();
-    await this.runtime.execute(`mkdir -p ${this.shell(store.getState().public.remoteRoot)}`);
+    await publicRuntime.sshIsRunning();
+    await publicRuntime.execute(`mkdir -p ${this.shell(store.getState().public.remoteRoot)}`);
   }
 
   private portRequired(port: unknown): number {
@@ -434,7 +426,7 @@ printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
   }
 
   private hostname(port: number): string {
-    return `vite-${this.portRequired(port)}.dev.${this.nginx.state.domain}`;
+    return `vite-${this.portRequired(port)}.dev.${nginx.state.domain}`;
   }
 
   private shell(value: string): string {
@@ -442,3 +434,5 @@ printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
   }
 
 }
+
+export default new Vite();

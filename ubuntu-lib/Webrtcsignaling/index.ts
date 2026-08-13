@@ -1,21 +1,18 @@
-import Nginx from "../Nginx/index.ts";
-import Public from "../Public/index.ts";
+import nginx from "../Nginx/index.ts";
+import publicRuntime from "../Public/index.ts";
 import store from "../store.ts";
 import vitePlugin from "./vitePlugin.ts";
 
-export default class Webrtcsignaling {
-  private readonly runtime = new Public();
+class Webrtcsignaling {
   private remoteRunningPromise?: Promise<void>;
-
-  constructor(private readonly nginx: Nginx) {}
 
   public get state() {
     const { pathname } = store.getState().webrtcsignaling;
     return {
-      host: `webrtc.${this.nginx.state.domain}`,
-      port: this.nginx.state.httpsPort,
+      host: `webrtc.${nginx.state.domain}`,
+      port: nginx.state.httpsPort,
       path: pathname,
-      secure: this.nginx.state.secure,
+      secure: nginx.state.secure,
     };
   }
 
@@ -25,7 +22,6 @@ export default class Webrtcsignaling {
       if (this.remoteRunningPromise === remoteRunningPromise) {
         this.remoteRunningPromise = undefined;
       }
-      this.runtime.dispose();
     });
     this.remoteRunningPromise = remoteRunningPromise;
     return remoteRunningPromise;
@@ -39,7 +35,7 @@ export default class Webrtcsignaling {
     const { entry, path, pathname, listenPort } = store.getState().webrtcsignaling;
     if (!path || !entry) throw new Error("WebRTC 信令外部实现尚未报备源码目录和入口");
 
-    await this.runtime.serviceIsRunning({
+    await publicRuntime.serviceIsRunning({
       name: "webrtcsignaling",
       entry,
       path,
@@ -55,7 +51,7 @@ export default class Webrtcsignaling {
     });
 
     const state = this.state;
-    await this.nginx.proxyRouteIsRunning({
+    await nginx.proxyRouteIsRunning({
       name: "webrtcsignaling",
       hostname: state.host,
       pathname: state.path,
@@ -108,3 +104,5 @@ export default class Webrtcsignaling {
     });
   }
 }
+
+export default new Webrtcsignaling();

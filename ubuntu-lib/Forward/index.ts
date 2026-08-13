@@ -1,5 +1,5 @@
 import net from "node:net";
-import Public from "../Public/index.ts";
+import publicRuntime from "../Public/index.ts";
 
 type ForwardRegistration = {
   name: string;
@@ -44,9 +44,8 @@ type ForwardData = {
   sshRevision?: number;
 };
 
-export default class Forward {
+class Forward {
   private readonly forwards = new Map<string, ForwardData>();
-  private readonly runtime = new Public();
 
   public register(registrationInput: ForwardRegistration): RegisteredForward {
     const registration = this.registrationRead(registrationInput);
@@ -83,7 +82,6 @@ export default class Forward {
   public async dispose(): Promise<void> {
     await Promise.all([...this.forwards.values()].map(forward => this.forwardClose(forward)));
     this.forwards.clear();
-    this.runtime.dispose();
   }
 
   private forwardIsRunning(forward: ForwardData): Promise<ForwardRunningState> {
@@ -97,14 +95,14 @@ export default class Forward {
 
   private async forwardRunningEnsure(forward: ForwardData): Promise<ForwardRunningState> {
     try {
-      await this.runtime.sshIsRunning();
-      if (forward.handle && forward.sshRevision === this.runtime.sshRevision) {
+      await publicRuntime.sshIsRunning();
+      if (forward.handle && forward.sshRevision === publicRuntime.sshRevision) {
         return { remotePort: forward.handle.port };
       }
 
       this.connectionsClose(forward);
       await forward.handle?.dispose().catch(() => undefined);
-      forward.handle = await this.runtime.ssh.forwardIn(
+      forward.handle = await publicRuntime.ssh.forwardIn(
         forward.state.remote.host,
         forward.state.remote.port,
         (_details, accept, reject) => {
@@ -132,7 +130,7 @@ export default class Forward {
           });
         },
       );
-      forward.sshRevision = this.runtime.sshRevision;
+      forward.sshRevision = publicRuntime.sshRevision;
       return { remotePort: forward.handle.port };
     } catch (error) {
       forward.handle = undefined;
@@ -148,9 +146,6 @@ export default class Forward {
     forward.handle = undefined;
     forward.sshRevision = undefined;
     if (handle) await handle.dispose().catch(() => undefined);
-    if (![...this.forwards.values()].some(current => current.handle)) {
-      this.runtime.dispose();
-    }
   }
 
   private connectionsClose(forward: ForwardData): void {
@@ -200,3 +195,5 @@ export default class Forward {
     return port;
   }
 }
+
+export default new Forward();

@@ -1,9 +1,9 @@
 import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
-import Public from "../Public/index.ts";
+import publicRuntime from "../Public/index.ts";
 import store from "../store.ts";
 
-export default class StunServer {
+class StunServer {
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
@@ -23,9 +23,7 @@ export default class StunServer {
 
     const executionPromise = (async () => {
       const state = this.state;
-      const runtime = new Public();
-      try {
-        await runtime.execute(`
+      await publicRuntime.execute(`
 set -e
 docker info >/dev/null
 if docker inspect coturn >/dev/null 2>&1; then
@@ -43,9 +41,6 @@ ufw reload >/dev/null
 test "$(docker inspect -f '{{.State.Running}}' coturn)" = true
 ss -lun | grep -Eq ':${state.port}[[:space:]]'
 `);
-      } finally {
-        runtime.dispose();
-      }
 
       await this.bindingRequest(state.host, state.port);
     })();
@@ -119,3 +114,5 @@ ss -lun | grep -Eq ':${state.port}[[:space:]]'
     });
   }
 }
+
+export default new StunServer();

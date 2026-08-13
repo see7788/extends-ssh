@@ -1,4 +1,4 @@
-import Public from "../Public/index.ts";
+import publicRuntime from "../Public/index.ts";
 import store from "../store.ts";
 
 type ProxyRoute = {
@@ -18,7 +18,7 @@ type StaticRoute = {
 
 type Route = Pick<ProxyRoute, "name" | "hostname">;
 
-export default class Nginx {
+class Nginx {
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
@@ -92,23 +92,16 @@ export default class Nginx {
     const name = this.nameRequired(route.name);
     const hostname = this.hostnameRequired(route.hostname);
     await this.isRemoteRunning();
-    const runtime = new Public();
-    try {
-      await runtime.execute(`
+    await publicRuntime.execute(`
 set -e
 rm -f ${this.shell(this.routePath(hostname, name))} ${this.shell(this.legacyPath(name))}
 /www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
 /www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf
 `);
-    } finally {
-      runtime.dispose();
-    }
   }
 
   private async remoteRunningEnsure(): Promise<void> {
-    const runtime = new Public();
-    try {
-      await runtime.execute(`
+    await publicRuntime.execute(`
 set -e
 NGINX=/www/server/nginx/sbin/nginx
 test -x "$NGINX"
@@ -122,9 +115,6 @@ ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
 ufw reload >/dev/null
 `);
-    } finally {
-      runtime.dispose();
-    }
   }
 
   private async routeWrite(route: {
@@ -133,11 +123,9 @@ ufw reload >/dev/null
     configuration: string;
   }): Promise<void> {
     await this.isRemoteRunning();
-    const runtime = new Public();
     const hostnamePath = this.hostnamePath(route.hostname);
     const routeDirectory = this.routeDirectory(route.hostname);
-    try {
-      await runtime.execute(`
+    await publicRuntime.execute(`
 set -e
 mkdir -p ${this.shell(routeDirectory)}
 rm -f ${this.shell(this.legacyPath(route.name))}
@@ -177,9 +165,6 @@ HTTPS
 /www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
 /www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf
 `);
-    } finally {
-      runtime.dispose();
-    }
   }
 
   private nameRequired(name: string): string {
@@ -239,3 +224,5 @@ HTTPS
     return `'${value.replaceAll("'", `'"'"'`)}'`;
   }
 }
+
+export default new Nginx();
