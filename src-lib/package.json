@@ -9,13 +9,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "es-module-lexer": "2.3.1",
     "extends-zustand": "workspace:*",
     "immer": "10.2.0",
     "node-ssh": "^13.2.1",
     "zustand": "5.0.13"
   },
+  "peerDependencies": {
+    "vite": "^6.3.6 || ^7.0.0 || ^8.0.0"
+  },
   "devDependencies": {
     "@types/node": "^20.19.40",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vite": "^6.3.6"
   }
 }

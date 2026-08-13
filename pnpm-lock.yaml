@@ -54,6 +54,9 @@ importers:
 
   src-lib:
     dependencies:
+      es-module-lexer:
+        specifier: 2.3.1
+        version: 2.3.1
       extends-zustand:
         specifier: workspace:*
         version: link:../../extends-zustand
@@ -73,6 +76,9 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vite:
+        specifier: ^6.3.6
+        version: 6.3.6(@types/node@20.19.43)(tsx@4.23.5)
 
   ubuntu-lib:
     dependencies:

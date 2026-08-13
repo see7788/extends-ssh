@@ -1,34 +1,59 @@
 # src-lib
 
-旧版私人云环境生产者；从 `src-lib/Ubuntu.ts` 引入现有单例后，直接消费尚未迁移的
-SSH、Node、Docker、PeerJS、Coturn 与邮件服务能力。
+`src-lib` 用 Zustand 切片组合 Ubuntu 远端能力。每个生产者只维护自己的配置和 actions，跨能力流程通过主 store 的 `get()` 组合；外部直接消费同一个 store。
 
-## Tree
+```ts
+import ubuntuStore from "src-lib/index.ts";
+
+await ubuntuStore.getState().sshActions.isRunning();
+```
+
+## 项目结构
 
 ```text
 src-lib/
-├── Ubuntu.ts
-│   ├── sshIsConnect(): Promise<void>  建立并维护旧 SSH 会话
-│   ├── execCommand(command: string)  执行远程命令并返回正式结果
-│   ├── dispose(): void  关闭旧 SSH 会话
-│   ├── nvmInstalled(): Promise<void>  保障旧 Node 运行环境
-│   ├── httpserverIsInstalled(): Promise<void>  保障旧静态服务环境
-│   ├── pm2IsRunning(): Promise<void>  保障旧 PM2 运行环境
-│   ├── dockerIsRunning(): Promise<void>  保障旧 Docker 运行环境
-│   ├── portInUse(port: number, protocol?: "tcp" | "udp"): Promise<boolean>  读取端口状态
-│   ├── portClose(port: number): Promise<void>  关闭占用指定端口的服务
-│   ├── coturnIsRunning(): Promise<void>  保障旧 Coturn 服务
-│   ├── peerjsIsRunning(): Promise<void>  保障旧 PeerJS 服务
-│   ├── emailSmtpIsRunning(): Promise<void>  保障旧邮件服务
-│   └── readonly peerjsState  交付旧 PeerJS 与 STUN 连接数据
-└── store.ts
-    └── default: zustand.StoreApi  维护旧生产者消费的 SSH 与服务状态
+├── index.ts                         # 公共入口
+│   └── default                      # 交付组合后的 Zustand vanilla store
+├── store.ts                         # 只组合切片并注入配置持久化
+├── Public/
+│   └── store.ts                     # 公共配置生产者
+│       └── public                   # 域名与远端根目录
+├── Ssh/
+│   └── store.ts                     # SSH 配置与会话生产者
+│       └── sshActions               # isRunning、execute、runtime、dispose
+├── Apt/
+│   └── store.ts                     # Ubuntu 基础包生产者
+│       └── aptActions               # isRemoteRunning
+├── Nodejs/
+│   └── store.ts                     # Node.js 配置与远端运行环境生产者
+│       └── nodejsActions            # 运行验证、部署依赖生成、生产依赖安装
+├── Docker/
+│   └── store.ts                     # Docker 运行环境生产者
+│       └── dockerActions            # isRemoteRunning
+├── Sftp/
+│   └── store.ts                     # SFTP 文件传输生产者
+│       └── sftpActions              # 文件传输、原子目录替换、远端文本读写
+├── Pm2/
+│   └── store.ts                     # PM2 运行环境生产者
+│       └── pm2Actions               # 运行验证、进程启动验证、进程关闭
+├── Forward/
+│   └── store.ts                     # SSH 远端转发生产者
+│       └── forwardActions           # register、dispose
+├── Nginx/
+│   └── store.ts                     # Nginx 配置与路由生产者
+│       └── nginxActions             # 运行验证、反向代理、静态路由、关闭路由
+├── Peerjs/
+│   └── store.ts                     # PeerJS 配置与服务生产者
+│       └── peerjsActions            # connection、isRemoteRunning
+├── StunServer/
+│   └── store.ts                     # STUN 配置与 Coturn 服务生产者
+│       └── stunServerActions        # connection、isRemoteRunning、vitePlugin
+├── Webrtcsignaling/
+│   └── store.ts                     # 私有信令配置、部署与专属 Vite 插件
+│       └── webrtcsignalingActions   # register、connection、isRemoteRunning、vitePlugin
+└── Vite/
+    └── store.ts                     # 无状态的构建流程消费者切片
+        └── viteActions              # forwardPlugin、staticPlugin、nodePlugin
 ```
 
-## 核心使用
-
-```ts
-import ssh from "src-lib/Ubuntu.ts";
-
-await ssh.sshIsConnect();
-```
+配置持久化到 `~/.extends-ssh/.zustand/src-lib.json`。actions、NodeSSH、转发连接、子进程和运行中的 Promise 不进入持久化数据。

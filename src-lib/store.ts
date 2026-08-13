@@ -1,48 +1,125 @@
-import { createStore } from 'zustand';
-import path, { join } from 'path';
-import cwdPersist from "extends-zustand/cwdPersist"
-import { immer } from "zustand/middleware/immer"
-import { fileURLToPath } from "url"
-const __filename = fileURLToPath(import.meta.url); // 当前文件的完整路径
-type state_t = {
-    sshConfig: {
-        host: string,
-        port: number,
-        username: string,
-        password: string,
-    }
-    peerServer_port: number,
-    coturn_default_port: number,//Coturn默认非加密STUN/TURN端口（TCP/UDP共用）
-    coturn_tls_port: number,//Coturn TLS加密STUN/TURN端口（TCP/UDP共用）
-    coturn_relay_port_start: number,//Coturn TURN媒体中继端口起始值（仅UDP）
-    peerjsIsRunning?: true
-    coturnIsRunning?: true
-    dockerIsRunning?: true
-    httpserverIsInstalled?: true
-    pm2IsRunning?: true
-    emailSmtpIsRunning?: true
-    nvmIsInstalled?: true
-}
-//github设置npm令牌https://github.com/see7788/testtaro/settings/secrets/actions
-// 当前SSH类针对Ubuntu 22.04版本
-// 查看端口命令： netstat -antulp
-// 停止防火墙命令：systemctl stop firewalld
-//云服务腾讯
-//git clone https://github.com/BrowserBox/BrowserBoxPro.git && cd BrowserBoxPro && sudo apt update && sudo apt install -y nodejs npm && npm install && npm start
-//宝塔 https://82.156.162.242:22947/d9450c6f    hazwa0sx   e6d8902e
-/**系统重装时候采用删除持久化文件的方式 */
-export default createStore<state_t>()(immer(cwdPersist({
-    cwd: path.dirname(path.dirname(__filename)),
-    initializer: (set, get) => ({
-        sshConfig: {
-            host: "82.156.162.242",
-            port: 54321,
-            username: 'root',
-            password: '9K78s98[98]j.9',
-        },
-        peerServer_port: 9000,
-        coturn_default_port: 3478,
-        coturn_tls_port: 5349,
-        coturn_relay_port_start: 49152,
-    }),
-})))
+import aptStore from "./Apt/store.ts";
+import dockerStore from "./Docker/store.ts";
+import forwardStore from "./Forward/store.ts";
+import nginxStore from "./Nginx/store.ts";
+import nodejsStore from "./Nodejs/store.ts";
+import peerjsStore from "./Peerjs/store.ts";
+import pm2Store from "./Pm2/store.ts";
+import publicStore from "./Public/store.ts";
+import sftpStore from "./Sftp/store.ts";
+import sshStore from "./Ssh/store.ts";
+import stunServerStore from "./StunServer/store.ts";
+import viteStore from "./Vite/store.ts";
+import webrtcsignalingStore from "./Webrtcsignaling/store.ts";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
+import { createStore } from "zustand";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
+import { immer } from "zustand/middleware/immer";
+
+type Store = ReturnType<typeof publicStore>
+  & ReturnType<typeof sshStore>
+  & ReturnType<typeof aptStore>
+  & ReturnType<typeof nodejsStore>
+  & ReturnType<typeof dockerStore>
+  & ReturnType<typeof sftpStore>
+  & ReturnType<typeof pm2Store>
+  & ReturnType<typeof forwardStore>
+  & ReturnType<typeof nginxStore>
+  & ReturnType<typeof peerjsStore>
+  & ReturnType<typeof stunServerStore>
+  & ReturnType<typeof webrtcsignalingStore>
+  & ReturnType<typeof viteStore>;
+
+type PersistedState = {
+  public: {
+    domain: string;
+    remoteRoot: string;
+  };
+  ssh: {
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+  };
+  nodejs: {
+    version: string;
+    architecture: "linux-x64";
+    sha256: string;
+  };
+  nginx: {
+    httpPort: 80;
+    httpsPort: 443;
+    secure: true;
+  };
+  peerjs: {
+    image: "peerjs/peerjs-server:1.0.2";
+    key: "peerjs";
+    listenPort: 9000;
+    pathname: "/peerjs";
+  };
+  stunServer: {
+    port: number;
+  };
+  webrtcsignaling: {
+    entry: string;
+    path: string;
+    listenPort: 9001;
+    pathname: "/signal";
+  };
+};
+
+const persistPath = path.join(
+  homedir(),
+  ".extends-ssh",
+  ".zustand",
+  "src-lib.json",
+);
+const storage: StateStorage = {
+  getItem: () => existsSync(persistPath)
+    ? readFileSync(persistPath, "utf8")
+    : null,
+  setItem: (_name, value) => {
+    mkdirSync(path.dirname(persistPath), { recursive: true });
+    writeFileSync(persistPath, value, "utf8");
+  },
+  removeItem: () => {
+    if (existsSync(persistPath)) rmSync(persistPath);
+  },
+};
+
+const store = createStore<Store>()(
+  persist<Store, [], [["zustand/immer", never]], PersistedState>(
+    immer((set, get, api) => ({
+      ...publicStore(set, get, api),
+      ...sshStore(set, get, api),
+      ...aptStore(set, get, api),
+      ...nodejsStore(set, get, api),
+      ...dockerStore(set, get, api),
+      ...sftpStore(set, get, api),
+      ...pm2Store(set, get, api),
+      ...forwardStore(set, get, api),
+      ...nginxStore(set, get, api),
+      ...peerjsStore(set, get, api),
+      ...stunServerStore(set, get, api),
+      ...webrtcsignalingStore(set, get, api),
+      ...viteStore(set, get, api),
+    })),
+    {
+      name: "src-lib",
+      storage: createJSONStorage<PersistedState>(() => storage),
+      partialize: state => ({
+        public: { ...state.public },
+        ssh: { ...state.ssh },
+        nodejs: { ...state.nodejs },
+        nginx: { ...state.nginx },
+        peerjs: { ...state.peerjs },
+        stunServer: { ...state.stunServer },
+        webrtcsignaling: { ...state.webrtcsignaling },
+      }),
+    },
+  ),
+);
+
+export default store;
