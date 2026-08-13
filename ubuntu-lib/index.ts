@@ -2,14 +2,13 @@ import Forward from "./Forward/index.ts";
 import Nginx from "./Nginx/index.ts";
 import Peerjs from "./Peerjs/index.ts";
 import Pm2 from "./Pm2/index.ts";
-import Public from "./Public/index.ts";
 import Sftp from "./Sftp/index.ts";
 import Ssh from "./Ssh/index.ts";
 import StunServer from "./StunServer/index.ts";
 import Vite from "./Vite/index.ts";
 import Webrtcsignaling from "./Webrtcsignaling/index.ts";
+import store from "./store.ts";
 
-const publicState = new Public();
 const ssh = new Ssh();
 
 class SftpRuntime extends Sftp {
@@ -62,7 +61,10 @@ const webrtcsignaling = new WebrtcsignalingRuntime();
 
 class Ubuntu {
   /** 交付公共域名与远端根目录配置。 */
-  public readonly public = publicState;
+  public get public() {
+    const { domain, remoteRoot } = store.getState().public;
+    return { domain, remoteRoot };
+  }
   /** 交付 SSH 连接配置、会话与远程命令能力。 */
   public readonly ssh = ssh;
   /** 交付域名数据，并维护远端 HTTPS、静态与反向代理路由。 */
