@@ -1,5 +1,5 @@
 import net from "node:net";
-import Public from "../public.ts";
+import Public from "../Public/index.ts";
 
 type ForwardRegistration = {
   name: string;

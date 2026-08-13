@@ -6,7 +6,8 @@ import compressing from "compressing";
 import { init, parse } from "es-module-lexer";
 import type { Plugin, ResolvedConfig, ViteDevServer } from "vite";
 import Forward from "../Forward/index.ts";
-import Public from "../public.ts";
+import Nginx from "../Nginx/index.ts";
+import Public from "../Public/index.ts";
 import store from "../store.ts";
 
 type RegisteredForward = ReturnType<Forward["register"]>;
@@ -17,7 +18,10 @@ export default class Vite {
     forwards: new Map<number, RegisteredForward>(),
   };
 
-  constructor(private readonly forward: Forward) {}
+  constructor(
+    private readonly forward: Forward,
+    private readonly nginx: Nginx,
+  ) {}
 
   /** 为 Hono 与其 React 项目建立开发隧道，并在构建后发布 Node 服务。 */
   public honoReact(): Plugin {
@@ -48,7 +52,7 @@ export default class Vite {
       enforce: "post",
       config: (_config, environment) => environment.command === "serve" ? ({
           server: {
-            allowedHosts: [`.dev.${store.getState().mainDomain}`],
+            allowedHosts: [`.dev.${this.nginx.state.domain}`],
             host: "127.0.0.1",
             strictPort: true,
           },
@@ -132,7 +136,12 @@ exit 1
 `);
               const upstreamMatch = startResult.stdout.match(/EXTENDS_SSH_UPSTREAM=(\d+)/);
               const upstreamPort = this.portRequired(Number(upstreamMatch?.[1]));
-              await this.proxyRoute({ port, upstreamPort });
+              await this.nginx.proxyRouteIsRunning({
+                name: `vite-${port}`,
+                hostname: this.hostname(port),
+                pathname: "/",
+                upstreamPort,
+              });
               await this.publicVerify(port, true);
             } finally {
               await fs.promises.rm(deploymentPackage, { force: true });
@@ -191,7 +200,12 @@ pm2 save --force >/dev/null 2>&1 || true
     const current = this.data.forwards.get(port);
     if (current) {
       const state = await current.isRunning();
-      await this.proxyRoute({ port, upstreamPort: this.portRequired(state.remotePort) });
+      await this.nginx.proxyRouteIsRunning({
+        name: `vite-${port}`,
+        hostname: this.hostname(port),
+        pathname: "/",
+        upstreamPort: this.portRequired(state.remotePort),
+      });
       await this.publicVerify(port, false, "/__vite_ping");
       return;
     }
@@ -203,7 +217,12 @@ pm2 save --force >/dev/null 2>&1 || true
     const state = await forward.isRunning();
     this.data.forwards.set(port, forward);
     try {
-      await this.proxyRoute({ port, upstreamPort: this.portRequired(state.remotePort) });
+      await this.nginx.proxyRouteIsRunning({
+        name: `vite-${port}`,
+        hostname: this.hostname(port),
+        pathname: "/",
+        upstreamPort: this.portRequired(state.remotePort),
+      });
       await this.publicVerify(port, false, "/__vite_ping");
     } catch (error) {
       this.data.forwards.delete(port);
@@ -219,7 +238,7 @@ pm2 save --force >/dev/null 2>&1 || true
       this.data.forwards.delete(port);
       await forward.close();
     }
-    const remotePath = `${store.getState().remoteRoot}/vite-${port}`;
+    const remotePath = `${store.getState().public.remoteRoot}/vite-${port}`;
     const kindPath = `${remotePath}/.extends-ssh-kind`;
     const kind = (await this.runtime.execute(
       `test -f ${this.shell(kindPath)} && cat ${this.shell(kindPath)} || true`,
@@ -230,14 +249,18 @@ pm2 save --force >/dev/null 2>&1 || true
         `cat ${this.shell(`${remotePath}/.extends-ssh-upstream-port`)}`,
       );
       const upstreamPort = this.portRequired(Number(result.stdout.trim()));
-      await this.proxyRoute({ port, upstreamPort });
+      await this.nginx.proxyRouteIsRunning({
+        name: `vite-${port}`,
+        hostname: this.hostname(port),
+        pathname: "/",
+        upstreamPort,
+      });
     }
     if (!kind) {
-      await this.runtime.execute(`
-rm -f ${this.shell(this.nginxPath(port))}
-/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
-/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf
-`);
+      await this.nginx.routeClose({
+        name: `vite-${port}`,
+        hostname: this.hostname(port),
+      });
     }
   }
 
@@ -247,7 +270,7 @@ rm -f ${this.shell(this.nginxPath(port))}
     preserveDirectory?: boolean;
   }): Promise<string> {
     await this.connect();
-    const remotePath = `${store.getState().remoteRoot}/vite-${port}`;
+    const remotePath = `${store.getState().public.remoteRoot}/vite-${port}`;
     const remoteSource = preserveDirectory
       ? `${remotePath}/${path.basename(localPath)}`
       : remotePath;
@@ -356,108 +379,17 @@ rm -f ${this.shell(this.nginxPath(port))}
   private async staticRoute(
     { port, remotePath }: { port: number; remotePath: string },
   ): Promise<void> {
-    const hostname = this.hostname(port);
-    const nginxPath = this.nginxPath(port);
-    await this.nginxIsRunning();
     await this.runtime.execute(`
 set -e
 printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
-cat > ${this.shell(nginxPath)} <<'CONFIG'
-server {
-  listen 80;
-  server_name ${hostname};
-  location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
-  location / {
-    root ${remotePath};
-    try_files $uri $uri/ /index.html;
-  }
-}
-CONFIG
-${this.certificateScript(hostname, nginxPath, `
-  location / {
-    root ${remotePath};
-    try_files $uri $uri/ /index.html;
-  }`)}
 `);
-  }
-
-  private async proxyRoute(
-    { port, upstreamPort }: { port: number; upstreamPort: number },
-  ): Promise<void> {
-    this.portRequired(upstreamPort);
-    const hostname = this.hostname(port);
-    const nginxPath = this.nginxPath(port);
-    const location = `
-  location / {
-    proxy_pass http://127.0.0.1:${upstreamPort};
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-  }`;
-    await this.nginxIsRunning();
-    await this.runtime.execute(`
-set -e
-cat > ${this.shell(nginxPath)} <<'CONFIG'
-server {
-  listen 80;
-  server_name ${hostname};
-  location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
-${location}
-}
-CONFIG
-${this.certificateScript(hostname, nginxPath, location)}
-`);
-  }
-
-  private certificateScript(hostname: string, nginxPath: string, location: string): string {
-    return `
-/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
-/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf
-if [ ! -f /etc/letsencrypt/live/${hostname}/fullchain.pem ]; then
-  certbot certonly --webroot -w /var/www/certbot -d ${hostname} \\
-    --non-interactive --agree-tos --register-unsafely-without-email
-fi
-cat > ${this.shell(nginxPath)} <<'CONFIG'
-server {
-  listen 80;
-  server_name ${hostname};
-  location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
-  location / { return 301 https://$host$request_uri; }
-}
-server {
-  listen 443 ssl;
-  server_name ${hostname};
-  ssl_certificate /etc/letsencrypt/live/${hostname}/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/${hostname}/privkey.pem;
-  ssl_protocols TLSv1.2 TLSv1.3;
-${location}
-}
-CONFIG
-/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
-/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf`;
-  }
-
-  private async nginxIsRunning(): Promise<void> {
-    await this.connect();
-    await this.runtime.execute(`
-set -e
-NGINX=/www/server/nginx/sbin/nginx
-NGINX_CONFIG=/www/server/nginx/conf/nginx.conf
-test -x "$NGINX"
-pgrep -f 'nginx: master process' >/dev/null
-mkdir -p /var/www/certbot /www/server/panel/vhost/nginx
-if ! command -v certbot >/dev/null 2>&1; then
-  apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot >/dev/null
-fi
-ufw allow 80/tcp >/dev/null
-ufw allow 443/tcp >/dev/null
-ufw reload >/dev/null
-`);
+    await this.nginx.staticRouteIsRunning({
+      name: `vite-${port}`,
+      hostname: this.hostname(port),
+      pathname: "/",
+      root: remotePath,
+      spaFallback: true,
+    });
   }
 
   private async publicVerify(
@@ -491,7 +423,7 @@ ufw reload >/dev/null
 
   private async connect(): Promise<void> {
     await this.runtime.sshIsRunning();
-    await this.runtime.execute(`mkdir -p ${this.shell(store.getState().remoteRoot)}`);
+    await this.runtime.execute(`mkdir -p ${this.shell(store.getState().public.remoteRoot)}`);
   }
 
   private portRequired(port: unknown): number {
@@ -502,15 +434,7 @@ ufw reload >/dev/null
   }
 
   private hostname(port: number): string {
-    const domain = store.getState().mainDomain;
-    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain)) {
-      throw new Error(`mainDomain 不是有效域名: ${domain}`);
-    }
-    return `vite-${this.portRequired(port)}.dev.${domain}`;
-  }
-
-  private nginxPath(port: number): string {
-    return `/www/server/panel/vhost/nginx/extends-ssh-vite-${this.portRequired(port)}.conf`;
+    return `vite-${this.portRequired(port)}.dev.${this.nginx.state.domain}`;
   }
 
   private shell(value: string): string {

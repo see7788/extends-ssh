@@ -1,45 +1,49 @@
 import type { ImmerStateCreator } from "extends-zustand/immerStateCreator";
-import { isAbsolute } from "node:path";
+
+type nodeState_t = {
+  path_isAbsolute_nodestate: typeof import("node:path").isAbsolute;
+};
 
 type WebrtcsignalingStore = {
   webrtcsignaling: {
+    entry: string;
     path: string;
-    jwtSecret: string;
-    port: number;
-    pathname: string;
+    listenPort: 9001;
+    pathname: "/signal";
   };
   webrtcsignalingActions: {
-    register(registration: { path: string; jwtSecret: string }): void;
+    register(registration: { entry: string; path: string }): void;
   };
 };
 
-const webrtcsignalingStore: ImmerStateCreator<WebrtcsignalingStore> = set => ({
+const webrtcsignalingStore: ImmerStateCreator<WebrtcsignalingStore, nodeState_t> = (set, get) => ({
   webrtcsignaling: {
+    entry: "",
     path: "",
-    jwtSecret: "",
-    port: 9001,
+    listenPort: 9001,
     pathname: "/signal",
   },
   webrtcsignalingActions: {
     register(registration) {
-      if (!isAbsolute(registration.path)) {
-        throw new TypeError(`WebRTC 信令产物路径必须是绝对路径: ${registration.path}`);
+      if (!get().path_isAbsolute_nodestate(registration.path)) {
+        throw new TypeError(`WebRTC 信令源码目录必须是绝对路径: ${registration.path}`);
       }
-      if (!registration.jwtSecret.trim()) {
-        throw new TypeError("WebRTC 信令 JWT secret 不能为空");
+      if (
+        !/^(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._~/-]+\.tsx?$/.test(registration.entry)
+      ) {
+        throw new TypeError(`WebRTC 信令 TypeScript 入口无效: ${registration.entry}`);
       }
       set(state => {
-        const pathname = state.webrtcsignaling.pathname
-          || (state.webrtcsignaling.path.startsWith("/") ? state.webrtcsignaling.path : "/signal");
         state.webrtcsignaling = {
+          entry: registration.entry,
           path: registration.path,
-          jwtSecret: registration.jwtSecret,
-          port: state.webrtcsignaling.port,
-          pathname,
+          listenPort: state.webrtcsignaling.listenPort,
+          pathname: state.webrtcsignaling.pathname,
         };
       });
     },
   },
 });
 
+export type { nodeState_t };
 export default webrtcsignalingStore;

@@ -6,7 +6,7 @@ import {
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createConnection } from "node:net";
-import { dirname, resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import store from "../store.ts";
 
 type Runtime = {
@@ -18,6 +18,16 @@ type Runtime = {
   };
   isRemoteRunning(): Promise<void>;
 };
+
+type SignalingSourceOptions = {
+  entry: string;
+};
+
+type SignalingConsumerOptions = {
+  projectName: string;
+};
+
+type VitePluginOptions = SignalingSourceOptions | SignalingConsumerOptions;
 
 type DevServer = {
   config: {
@@ -133,34 +143,43 @@ const runtimeClose = async (runtime: DevRuntime, server: DevServer): Promise<voi
 
 export default function vitePlugin(
   runtime: Runtime,
-  { entry, jwtSecret }: { entry: string; jwtSecret: string },
+  options: VitePluginOptions,
 ) {
-  if (!entry.trim()) throw new TypeError("WebRTC 信令入口不能为空");
-  if (!jwtSecret.trim()) throw new TypeError("WebRTC 信令 JWT secret 不能为空");
-
   const signalingServer = runtime.state;
-  const { ssh, stunServer } = store.getState();
-  if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
-    throw new RangeError(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
+  if ("projectName" in options) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(options.projectName)) {
+      throw new TypeError(`WebRTC 项目名称无效: ${options.projectName}`);
+    }
+    return {
+      name: "ubuntu-lib:webrtcsignaling-consumer",
+      config: () => ({
+        define: {
+          "globalThis.WEBRTC_PROJECT_NAME": JSON.stringify(options.projectName),
+          "globalThis.WEBRTC_SIGNALING_URL": JSON.stringify(
+            `${signalingServer.secure ? "https" : "http"}://${signalingServer.host}${signalingServer.path}`,
+          ),
+        },
+      }),
+    };
   }
-  const servicePort = signalingServer.port + 1;
+
+  const { entry } = options;
+  if (!entry.trim()) throw new TypeError("WebRTC 信令入口不能为空");
+
+  const { listenPort, pathname } = store.getState().webrtcsignaling;
+  const servicePort = listenPort + 1;
   if (servicePort > 65_535) throw new RangeError("WebRTC 信令开发服务端口超出范围");
 
   const host = "127.0.0.1";
   const environment = {
     WS_NO_BUFFER_UTIL: "1",
     WS_NO_UTF_8_VALIDATE: "1",
-    WEBRTC_RTC_CONFIGURATION: JSON.stringify({
-      iceServers: [{ urls: `stun:${ssh.host}:${stunServer.port}` }],
-    }),
     WEBRTC_SIGNALING_HOSTNAME: host,
-    WEBRTC_SIGNALING_JWT_SECRET: jwtSecret,
-    WEBRTC_SIGNALING_PATH: signalingServer.path,
-    WEBRTC_SIGNALING_PORT: String(signalingServer.port),
-    WEBRTC_SIGNALING_TOKEN_TTL_SECONDS: "300",
+    WEBRTC_SIGNALING_PATH: pathname,
+    WEBRTC_SIGNALING_PORT: String(listenPort),
   };
   let projectRoot = process.cwd();
-  let artifactPath: string | undefined;
+  let sourceEntry = "";
   let isBuild = false;
 
   return {
@@ -171,7 +190,7 @@ export default function vitePlugin(
             appType: "custom" as const,
             server: {
               host,
-              port: signalingServer.port,
+              port: listenPort,
               proxy: {
                 "^/(?!__vite_ping)": {
                   target: `http://${host}:${servicePort}`,
@@ -183,19 +202,9 @@ export default function vitePlugin(
           }
         : {
             build: {
-              emptyOutDir: true,
-              outDir: "dist/webrtcsignaling",
-              rollupOptions: {
-                output: {
-                  entryFileNames: "index.js",
-                  format: "es" as const,
-                },
-              },
               ssr: entry,
               target: "node20",
-            },
-            ssr: {
-              noExternal: true as const,
+              write: false,
             },
           }
     ),
@@ -204,6 +213,10 @@ export default function vitePlugin(
       isBuild = config.command === "build";
       const entryPath = resolve(projectRoot, entry);
       if (!existsSync(entryPath)) throw new Error(`WebRTC 信令入口不存在: ${entryPath}`);
+      sourceEntry = relative(projectRoot, entryPath).replaceAll("\\", "/");
+      if (!sourceEntry || sourceEntry.startsWith("../")) {
+        throw new Error(`WebRTC 信令入口必须位于项目根目录内: ${entryPath}`);
+      }
     },
     configureServer: async (server: DevServer) => {
       const previous = runtimeGlobal[runtimeKey];
@@ -242,34 +255,12 @@ export default function vitePlugin(
         void runtimeClose(devRuntime, server);
       });
     },
-    writeBundle: (
-      output: { dir?: string; file?: string },
-      bundle: Record<string, {
-        type: string;
-        fileName: string;
-        isEntry?: boolean;
-      }>,
-    ) => {
-      const entries = Object.values(bundle).filter(
-        item => item.type === "chunk" && item.isEntry,
-      );
-      if (entries.length !== 1) {
-        throw new Error(`WebRTC 信令构建必须产生唯一入口，当前为 ${entries.length} 个`);
-      }
-      const outputDirectory = output.dir
-        ? resolve(projectRoot, output.dir)
-        : output.file
-          ? dirname(resolve(projectRoot, output.file))
-          : undefined;
-      if (!outputDirectory) throw new Error("WebRTC 信令构建未提供输出目录");
-      artifactPath = resolve(outputDirectory, entries[0].fileName);
-    },
     closeBundle: async () => {
       if (!isBuild) return;
-      if (!artifactPath) throw new Error("WebRTC 信令构建未产生可报备的入口文件");
+      if (!sourceEntry) throw new Error("WebRTC 信令源码入口尚未完成校验");
       store.getState().webrtcsignalingActions.register({
-        path: artifactPath,
-        jwtSecret,
+        entry: sourceEntry,
+        path: projectRoot,
       });
       await runtime.isRemoteRunning();
     },

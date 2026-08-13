@@ -1,50 +1,55 @@
+import peerjsStore from "./Peerjs/store.ts";
+import publicStore from "./Public/store.ts";
 import stunServerStore from "./StunServer/store.ts";
+import webrtcsignalingNodeState from "./Webrtcsignaling/nodeState.ts";
 import webrtcsignalingStore from "./Webrtcsignaling/store.ts";
 import cwdPersist from "extends-zustand/cwdPersist";
-import type { ImmerStateCreator } from "extends-zustand/immerStateCreator";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createStore } from "zustand";
 import type {} from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 
-type UbuntuStore = {
-  ssh: {
-    host: string;
-    port: number;
-    username: string;
-    password: string;
-  };
-  mainDomain: string;
-  remoteRoot: string;
-};
-
+type PeerjsStore = ReturnType<typeof peerjsStore>;
+type PublicStore = ReturnType<typeof publicStore>;
 type StunServerStore = ReturnType<typeof stunServerStore>;
+type WebrtcsignalingNodeState = ReturnType<typeof webrtcsignalingNodeState>;
 type WebrtcsignalingStore = ReturnType<typeof webrtcsignalingStore>;
 
-type Store = UbuntuStore
+type Store = PublicStore
+  & PeerjsStore
   & StunServerStore
+  & WebrtcsignalingNodeState
   & WebrtcsignalingStore;
 
-const ubuntuStore: ImmerStateCreator<UbuntuStore> = () => ({
-  ssh: {
-    host: "82.156.162.242",
-    port: 54321,
-    username: "root",
-    password: "9K78s98[98]j.9",
-  },
-  mainDomain: "13520521413.store",
-  remoteRoot: "/www/wwwroot/extends-ssh",
-});
+type PersistedState = Pick<
+  Store,
+  "peerjs" | "public" | "stunServer" | "webrtcsignaling"
+>;
 
-export default createStore<Store>()(
+const store = createStore<Store>()(
   cwdPersist({
     cwd: path.join(homedir(), ".extends-ssh"),
-    name: "Ubuntu",
+    name: "ubuntu-lib",
     initializer: immer<Store>((set, get, api) => ({
-      ...ubuntuStore(set, get, api),
+      ...publicStore(set, get, api),
+      ...peerjsStore(set, get, api),
       ...stunServerStore(set, get, api),
+      ...webrtcsignalingNodeState(set, get, api),
       ...webrtcsignalingStore(set, get, api),
     })),
   }),
 );
+
+const persistedStateRead = (state: Store): PersistedState => ({
+  peerjs: structuredClone(state.peerjs),
+  public: structuredClone(state.public),
+  stunServer: structuredClone(state.stunServer),
+  webrtcsignaling: structuredClone(state.webrtcsignaling),
+});
+
+store.persist.setOptions({
+  partialize: state => persistedStateRead(state) as Store,
+});
+
+export default store;

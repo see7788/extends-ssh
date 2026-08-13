@@ -1,125 +1,96 @@
-import Public from "../public.ts";
+import Nginx from "../Nginx/index.ts";
+import Public from "../Public/index.ts";
 import store from "../store.ts";
 import vitePlugin from "./vitePlugin.ts";
-
-const serviceName = "webrtcsignaling";
 
 export default class Webrtcsignaling {
   private readonly runtime = new Public();
   private remoteRunningPromise?: Promise<void>;
 
+  constructor(private readonly nginx: Nginx) {}
+
   public get state() {
-    const { ssh, webrtcsignaling } = store.getState();
-    const pathname = webrtcsignaling.pathname
-      || (webrtcsignaling.path.startsWith("/") ? webrtcsignaling.path : "/signal");
-    if (!Number.isInteger(webrtcsignaling.port) || webrtcsignaling.port < 1 || webrtcsignaling.port > 65_535) {
-      throw new Error(`WebRTC 信令端口必须是 1-65535 的整数: ${String(webrtcsignaling.port)}`);
-    }
-    if (!/^\/[A-Za-z0-9/_-]*$/.test(pathname)) {
-      throw new Error(`WebRTC 信令路径无效: ${pathname}`);
-    }
+    const { pathname } = store.getState().webrtcsignaling;
     return {
-      host: ssh.host,
-      port: webrtcsignaling.port,
+      host: `webrtc.${this.nginx.state.domain}`,
+      port: this.nginx.state.httpsPort,
       path: pathname,
-      secure: false as const,
+      secure: this.nginx.state.secure,
     };
   }
 
   public isRemoteRunning(): Promise<void> {
     if (this.remoteRunningPromise) return this.remoteRunningPromise;
-    this.remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
-      this.remoteRunningPromise = undefined;
+    const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
+      if (this.remoteRunningPromise === remoteRunningPromise) {
+        this.remoteRunningPromise = undefined;
+      }
       this.runtime.dispose();
     });
-    return this.remoteRunningPromise;
+    this.remoteRunningPromise = remoteRunningPromise;
+    return remoteRunningPromise;
   }
 
-  /** 交付 WebRTC 信令完整的开发、构建、报备与远端发布生命周期。 */
-  public vitePlugin(options: { entry: string; jwtSecret: string }) {
+  public vitePlugin(options: { entry: string } | { projectName: string }) {
     return vitePlugin(this, options);
   }
 
   private async remoteRunningEnsure(): Promise<void> {
-    const { ssh, stunServer, webrtcsignaling } = store.getState();
-    if (!webrtcsignaling.path) {
-      throw new Error("WebRTC 信令外部实现尚未报备产物路径");
-    }
-    if (!webrtcsignaling.jwtSecret) {
-      throw new Error("WebRTC 信令外部实现尚未报备 JWT secret");
-    }
-    if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
-      throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
-    }
-    const state = this.state;
+    const { entry, path, pathname, listenPort } = store.getState().webrtcsignaling;
+    if (!path || !entry) throw new Error("WebRTC 信令外部实现尚未报备源码目录和入口");
+
     await this.runtime.serviceIsRunning({
-      name: serviceName,
-      path: webrtcsignaling.path,
+      name: "webrtcsignaling",
+      entry,
+      path,
       environment: {
         WS_NO_BUFFER_UTIL: "1",
         WS_NO_UTF_8_VALIDATE: "1",
-        WEBRTC_RTC_CONFIGURATION: JSON.stringify({
-          iceServers: [{ urls: `stun:${ssh.host}:${stunServer.port}` }],
-        }),
-        WEBRTC_SIGNALING_HOSTNAME: "0.0.0.0",
-        WEBRTC_SIGNALING_JWT_SECRET: webrtcsignaling.jwtSecret,
-        WEBRTC_SIGNALING_PATH: state.path,
-        WEBRTC_SIGNALING_PORT: String(state.port),
-        WEBRTC_SIGNALING_TOKEN_TTL_SECONDS: "300",
+        WEBRTC_SIGNALING_HOSTNAME: "127.0.0.1",
+        WEBRTC_SIGNALING_PATH: pathname,
+        WEBRTC_SIGNALING_PORT: String(listenPort),
       },
       healthCommand:
-        `curl --fail --silent http://127.0.0.1:${state.port}/ | grep '"name":"${serviceName}"'`,
+        `curl --fail --silent http://127.0.0.1:${listenPort}${pathname} | grep '"name":"webrtcsignaling"'`,
     });
-    const origin = `${state.secure ? "https" : "http"}://${state.host}:${state.port}`;
-    const health = await fetch(`${origin}/`, {
+
+    const state = this.state;
+    await this.nginx.proxyRouteIsRunning({
+      name: "webrtcsignaling",
+      hostname: state.host,
+      pathname: state.path,
+      upstreamPort: listenPort,
+    });
+
+    const healthUrl = `https://${state.host}${state.path}`;
+    const health = await fetch(healthUrl, {
       signal: AbortSignal.timeout(10_000),
     });
-    const healthState = await health.json() as { name?: string };
+    const healthState = await health.json() as { name?: unknown };
     if (!health.ok || healthState.name !== "webrtcsignaling") {
       throw new Error(`WebRTC 信令公网健康检查失败: HTTP ${health.status}`);
     }
 
-    const tokenUrl = `${origin}${state.path}/ubuntu-lib-health/connect`;
-    const connectionResponse = await fetch(tokenUrl, {
-      method: "POST",
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!connectionResponse.ok) {
-      throw new Error(`WebRTC 连接凭证颁发失败: HTTP ${connectionResponse.status}`);
-    }
-    const connection = await connectionResponse.json() as {
-      peerId?: unknown;
-      token?: unknown;
-      signalingPath?: unknown;
-    };
-    if (
-      typeof connection.peerId !== "string"
-      || typeof connection.token !== "string"
-      || typeof connection.signalingPath !== "string"
-      || !connection.signalingPath.startsWith("/")
-    ) {
-      throw new Error("WebRTC 连接凭证格式无效");
-    }
-
-    const signalingUrl = new URL(
-      connection.signalingPath,
-      connectionResponse.url || tokenUrl,
-    );
-    if (signalingUrl.protocol === "http:") signalingUrl.protocol = "ws:";
-    else if (signalingUrl.protocol === "https:") signalingUrl.protocol = "wss:";
-    else throw new TypeError(`WebRTC 信令协议无效: ${signalingUrl.protocol}`);
-    signalingUrl.searchParams.set("token", connection.token);
-
     await new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(signalingUrl);
+      const socket = new WebSocket(
+        `wss://${state.host}${state.path}/ubuntu-lib-health`,
+      );
       const timeout = setTimeout(() => {
         socket.close();
         reject(new Error("WebRTC 信令公网 WebSocket 握手超时"));
       }, 5_000);
       socket.addEventListener("message", event => {
         try {
-          const message = JSON.parse(String(event.data)) as { type?: string; peerId?: string };
-          if (message.type !== "open" || message.peerId !== connection.peerId) return;
+          const message = JSON.parse(String(event.data)) as {
+            type?: unknown;
+            peerId?: unknown;
+            projectName?: unknown;
+          };
+          if (
+            message.type !== "open"
+            || typeof message.peerId !== "string"
+            || message.projectName !== "ubuntu-lib-health"
+          ) return;
           clearTimeout(timeout);
           socket.close();
           resolve();
@@ -135,6 +106,5 @@ export default class Webrtcsignaling {
         reject(new Error("WebRTC 信令公网 WebSocket 握手失败"));
       });
     });
-
   }
 }

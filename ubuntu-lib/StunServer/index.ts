@@ -1,18 +1,18 @@
 import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
-import Public from "../public.ts";
+import Public from "../Public/index.ts";
 import store from "../store.ts";
 
 export default class StunServer {
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
-    const { ssh, stunServer } = store.getState();
+    const { public: publicState, stunServer } = store.getState();
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
       throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
     }
     return {
-      host: ssh.host,
+      host: publicState.ssh.host,
       port: stunServer.port,
       secure: false as const,
     };
@@ -57,6 +57,20 @@ ss -lun | grep -Eq ':${state.port}[[:space:]]'
     });
     this.remoteRunningPromise = remoteRunningPromise;
     return remoteRunningPromise;
+  }
+
+  public vitePlugin() {
+    const state = this.state;
+    return {
+      name: "ubuntu-lib:stunServer-consumer",
+      config: () => ({
+        define: {
+          "globalThis.WEBRTC_STUN_URL": JSON.stringify(
+            `stun:${state.host}:${state.port}`,
+          ),
+        },
+      }),
+    };
   }
 
   private bindingRequest(host: string, port: number): Promise<void> {
