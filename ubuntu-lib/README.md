@@ -1,13 +1,14 @@
 # ubuntu-lib
 
-`ubuntu-lib` 为 Vite、WebRTC 信令、STUN 和 PM2 分别提供独立的云端生产者。外部服务从
-`ubuntu-lib/store.ts` 向自己的专属切片报备实现数据，再从 `ubuntu-lib/index.ts` 取得具体
-生产者，通过无参数 `isRunning()` 提交并验证服务。
+`ubuntu-lib` 为 Vite、WebRTC 信令、STUN 和 PM2 分别提供独立的云端生产者。外部 Vite 服务
+从 `ubuntu-lib/index.ts` 取得专属插件；插件自动报备真实构建产物，并在构建结束后提交和验证
+服务。业务消费者只读取对应生产者的 `state`。
 
 ```text
 ubuntu-lib/
 ├── index.ts                 # 包入口，只组合并暴露根级生产者
-│   ├── forwardLoc: ForwardLoc  维护 SSH 本地端口转发
+│   ├── forward: Forward  维护本地、远端端点组成的 SSH 转发
+│   ├── sftp: Sftp  交付本地与远端之间的双向文件传输
 │   ├── stunServer: StunServer  交付 STUN 数据并保障 Coturn
 │   ├── webrtcProxy: WebrtcProxy  交付并保障 WebRTC 信令
 │   ├── vite: Vite  交付开发隧道与构建发布能力
@@ -15,36 +16,44 @@ ubuntu-lib/
 ├── store.ts                 # 内部主仓库，只组合根配置和独立切片
 │   ├── ssh  SSH 连接所需的外部固定数据
 │   ├── mainDomain: string  已备案主域名；Vite 据此生产端口子域名
-│   └── 组合 ForwardLoc、StunServer、WebrtcProxy、Vite 切片
-├── ForwardLoc/
-│   ├── store.ts             # 本地端口转发切片
-│   └── index.ts             # SSH 端口转发生产者
-│       └── register()  创建并维护具体本地端口转发
+│   ├── remoteRoot: string  所有远端发布共同使用的私有根路径
+│   └── 组合 StunServer、WebrtcProxy 配置切片
+├── Forward/
+│   └── index.ts             # 单 class 的 SSH 端口转发生产者
+│       ├── register()  注册一组本地、远端配置并返回运行时实例
+│       │   ├── readonly state  只交付 name、local、remote 配置
+│       │   ├── isRunning()  当次保障隧道并返回 remotePort
+│       │   └── close()  关闭当前隧道
+│       └── dispose()  关闭全部转发及共享 SSH 会话
+├── Sftp/
+│   └── index.ts             # 双向 SFTP 生产者
+│       ├── remoteUpload()  把本地文件上传到远端
+│       ├── locDownload()  把远端文件下载到本地
+│       └── dispose()  关闭当前 SFTP 对象共用的 SSH 会话
 ├── StunServer/
 │   ├── store.ts             # STUN 服务配置切片
 │   │   └── stunServer.port: number  Coturn 独占端口
 │   └── index.ts             # STUN 服务生产者
 │       ├── readonly state  交付 host、port 和 secure
-│       └── isRunning(): Promise<typeof state>  保障 Coturn 并验证公网 STUN 响应
+│       └── isRemoteRunning(): Promise<void>  保障 Coturn 并验证公网 STUN 响应
 ├── WebrtcProxy/
 │   ├── store.ts             # WebRTC 信令专属切片
 │   │   ├── webrtcProxy  仅保存外部产物路径、JWT secret、信令端口和路径
-│   │   └── webrtcProxyActions.register()  接收外部信令实现的路径和 JWT secret 报备
+│   │   └── webrtcProxyActions.register()  接收专属 Vite 插件的路径和 JWT secret 报备
 │   └── index.ts             # WebRTC 信令生产者
 │       ├── readonly state  交付 host、port、path 和 secure
-│       └── isRunning(): Promise<void>  无参数发布并验证 HTTP、凭证和 WebSocket 信令
+│       ├── isRemoteRunning(): Promise<void>  无参数发布并验证 HTTP、凭证和 WebSocket 信令
+│       └── vite(jwtSecret): Plugin  从真实 bundle 报备入口并在构建结束后提交
 ├── Vite/
-│   ├── store.ts             # Vite 数据切片
-│   │   └── vite.remoteRoot: string  交付 SFTP 上传和站点发布共同使用的远端根路径
 │   └── index.ts             # Vite 公网开发与发布消费场景
 │       ├── honoReact(): Plugin  开发时建立隧道，构建时发布 Hono 与全部 React 产物
-│       │   └── 调用 store.mainDomain、store.vite.remoteRoot、Public.sshIsRunning()、
-│       │       Public.ssh.putFile()、Public.execute()、Public.pm2IsRunning()
+│       │   └── 调用 store.mainDomain、store.remoteRoot、Public.sshIsRunning()、
+│       │       Public.sftp.remoteUpload()、Public.execute()、Public.pm2IsRunning()
 │       ├── react(): Plugin  开发时建立隧道，构建时由 Nginx 直接发布 React 产物
-│       │   └── 调用 store.mainDomain、store.vite.remoteRoot、Public.sshIsRunning()、
-│       │       Public.ssh.putFile()、Public.execute()
+│       │   └── 调用 store.mainDomain、store.remoteRoot、Public.sshIsRunning()、
+│       │       Public.sftp.remoteUpload()、Public.execute()
 │       └── electronRenderer(): Plugin  为两种 Electron Renderer 场景建立开发隧道
-│           └── 调用 store.mainDomain、store.vite.remoteRoot、Public.sshIsRunning()、
+│           └── 调用 store.mainDomain、store.remoteRoot、Public.sshIsRunning()、
 │               Public.ssh.forwardIn()、Public.execute()
 ├── Pm2.ts                  # Ubuntu PM2 运行时数据生产者
 │   ├── readonly state  交付服务器地址、daemon 状态、更新时间与完整进程列表
@@ -59,7 +68,8 @@ ubuntu-lib/
 │   └── dispose(): void  关闭当前 PM2 生产者持有的 SSH 会话
 │       └── 调用 Public.dispose()
 └── public.ts                # 新服务共同消费的 SSH、命令与 PM2 基本能力
-    ├── readonly ssh: NodeSSH  让服务执行 SFTP 上传与 SSH 反向端口转发
+    ├── readonly ssh: NodeSSH  让底层生产者执行 SSH 命令与端口转发
+    ├── readonly sftp: Sftp  在当前 SSH 会话上组合双向文件传输
     ├── sshIsRunning(): Promise<void>  确保当前服务实例拥有可用 SSH 会话
     │   └── 调用 store.ssh、NodeSSH.connect()、NodeSSH.execCommand()
     ├── execute(command: string): Promise<SSHExecCommandResponse>  执行并校验远程命令
@@ -67,7 +77,7 @@ ubuntu-lib/
     ├── pm2IsRunning(): Promise<void>  确保远程 Node 项目拥有持久 PM2 运行环境
     │   └── 调用 Public.execute()
     ├── serviceIsRunning(): Promise<void>  原子发布专属生产者提交的单文件 Node 服务
-    │   └── 调用 Public.pm2IsRunning()、Public.execute()、Public.ssh.putFile()
+    │   └── 调用 Public.pm2IsRunning()、Public.execute()、Public.sftp.remoteUpload()
     └── dispose(): void  关闭当前服务实例持有的 SSH 会话
         └── 调用 NodeSSH.dispose()
 ```
@@ -149,20 +159,18 @@ export default defineConfig({
 });
 ```
 
-WebRTC 信令源码项目是生产者。它在自己的独立文件中直接消费主 store，向专属切片报备实现
-数据；构建完成时再从公开入口取得对应生产者，无参数提交：
+WebRTC 信令源码项目直接在 Vite 配置中使用专属插件。插件从 Rollup 的真实 bundle 输出取得
+唯一入口，内部完成 store 报备、远端路径派生和构建后提交，不需要额外的报备文件：
 
 ```ts
-import { resolve } from "node:path";
 import ubuntu from "ubuntu-lib/index.ts";
-import store from "ubuntu-lib/store.ts";
+import { defineConfig } from "vite";
 
-store.getState().webrtcProxyActions.register({
-  path: resolve(import.meta.dirname, "dist/webrtcsignaling/index.js"),
-  jwtSecret: "webrtcsignaling-open-issuer",
+export default defineConfig({
+  plugins: [
+    ubuntu.webrtcProxy.vite("webrtcsignaling-open-issuer"),
+  ],
 });
-
-await ubuntu.webrtcProxy.isRunning();
 ```
 
 外部消费者不接触主 store、产物路径、JWT secret 或部署方法，只消费对应切片公开对象交付的

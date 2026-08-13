@@ -4,7 +4,7 @@ import Public from "../public.ts";
 import store from "../store.ts";
 
 export default class StunServer {
-  private runningPromise?: Promise<typeof this.state>;
+  private remoteRunningPromise?: Promise<void>;
 
   public get state() {
     const { ssh, stunServer } = store.getState();
@@ -18,8 +18,8 @@ export default class StunServer {
     };
   }
 
-  public isRunning(): Promise<typeof this.state> {
-    if (this.runningPromise) return this.runningPromise;
+  public isRemoteRunning(): Promise<void> {
+    if (this.remoteRunningPromise) return this.remoteRunningPromise;
 
     const executionPromise = (async () => {
       const state = this.state;
@@ -48,16 +48,15 @@ ss -lun | grep -Eq ':${state.port}[[:space:]]'
       }
 
       await this.bindingRequest(state.host, state.port);
-      return this.state;
     })();
 
-    const runningPromise = executionPromise.finally(() => {
-      if (this.runningPromise === runningPromise) {
-        this.runningPromise = undefined;
+    const remoteRunningPromise = executionPromise.finally(() => {
+      if (this.remoteRunningPromise === remoteRunningPromise) {
+        this.remoteRunningPromise = undefined;
       }
     });
-    this.runningPromise = runningPromise;
-    return runningPromise;
+    this.remoteRunningPromise = remoteRunningPromise;
+    return remoteRunningPromise;
   }
 
   private bindingRequest(host: string, port: number): Promise<void> {

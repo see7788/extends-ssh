@@ -5,19 +5,19 @@ import { createRequire, isBuiltin } from "node:module";
 import compressing from "compressing";
 import { init, parse } from "es-module-lexer";
 import type { Plugin, ResolvedConfig, ViteDevServer } from "vite";
-import ForwardLoc from "../ForwardLoc/index.ts";
+import Forward from "../Forward/index.ts";
 import Public from "../public.ts";
 import store from "../store.ts";
 
-type LocForward = ReturnType<ForwardLoc["register"]>;
+type RegisteredForward = ReturnType<Forward["register"]>;
 
 export default class Vite {
   private readonly runtime = new Public();
   private readonly data = {
-    forwards: new Map<number, LocForward>(),
+    forwards: new Map<number, RegisteredForward>(),
   };
 
-  constructor(private readonly forwardLoc: ForwardLoc) {}
+  constructor(private readonly forward: Forward) {}
 
   /** 为 Hono 与其 React 项目建立开发隧道，并在构建后发布 Node 服务。 */
   public honoReact(): Plugin {
@@ -86,7 +86,10 @@ export default class Vite {
             const deploymentPackage = await this.packageCreate({ localPath, projectRoot, port });
             try {
               const remotePath = await this.upload({ localPath, port, preserveDirectory: true });
-              await this.runtime.ssh.putFile(deploymentPackage, `${remotePath}/package.json`);
+              await this.runtime.sftp.remoteUpload(
+                deploymentPackage,
+                `${remotePath}/package.json`,
+              );
               await this.runtime.pm2IsRunning();
               const processName = `vite-node-${port}`;
               const startResult = await this.runtime.execute(`
@@ -192,7 +195,7 @@ pm2 save --force >/dev/null 2>&1 || true
       await this.publicVerify(port, false, "/__vite_ping");
       return;
     }
-    const forward = this.forwardLoc.register({
+    const forward = this.forward.register({
       name: `vite-${port}`,
       local: { host: "127.0.0.1", port },
       remote: { host: "127.0.0.1", port: 0 },
@@ -216,7 +219,7 @@ pm2 save --force >/dev/null 2>&1 || true
       this.data.forwards.delete(port);
       await forward.close();
     }
-    const remotePath = `${store.getState().vite.remoteRoot}/vite-${port}`;
+    const remotePath = `${store.getState().remoteRoot}/vite-${port}`;
     const kindPath = `${remotePath}/.extends-ssh-kind`;
     const kind = (await this.runtime.execute(
       `test -f ${this.shell(kindPath)} && cat ${this.shell(kindPath)} || true`,
@@ -244,7 +247,7 @@ rm -f ${this.shell(this.nginxPath(port))}
     preserveDirectory?: boolean;
   }): Promise<string> {
     await this.connect();
-    const remotePath = `${store.getState().vite.remoteRoot}/vite-${port}`;
+    const remotePath = `${store.getState().remoteRoot}/vite-${port}`;
     const remoteSource = preserveDirectory
       ? `${remotePath}/${path.basename(localPath)}`
       : remotePath;
@@ -255,7 +258,7 @@ rm -f ${this.shell(this.nginxPath(port))}
       await this.runtime.execute(
         `rm -rf ${this.shell(remotePath)} && mkdir -p ${this.shell(remoteSource)}`,
       );
-      await this.runtime.ssh.putFile(localZip, remoteZip);
+      await this.runtime.sftp.remoteUpload(localZip, remoteZip);
       const unzip = `unzip -oq ${this.shell(remoteZip)} -d ${this.shell(remoteSource)}`;
       await this.runtime.execute(`${unzip} && rm -f ${this.shell(remoteZip)}`);
       return remotePath;
@@ -488,7 +491,7 @@ ufw reload >/dev/null
 
   private async connect(): Promise<void> {
     await this.runtime.sshIsRunning();
-    await this.runtime.execute(`mkdir -p ${this.shell(store.getState().vite.remoteRoot)}`);
+    await this.runtime.execute(`mkdir -p ${this.shell(store.getState().remoteRoot)}`);
   }
 
   private portRequired(port: unknown): number {

@@ -1,11 +1,12 @@
 import Public from "../public.ts";
 import store from "../store.ts";
+import { dirname, resolve } from "node:path";
 
 const serviceName = "webrtcsignaling";
 
 export default class WebrtcProxy {
   private readonly runtime = new Public();
-  private runningPromise?: Promise<void>;
+  private remoteRunningPromise?: Promise<void>;
 
   public get state() {
     const { ssh, webrtcProxy } = store.getState();
@@ -25,16 +26,67 @@ export default class WebrtcProxy {
     };
   }
 
-  public isRunning(): Promise<void> {
-    if (this.runningPromise) return this.runningPromise;
-    this.runningPromise = this.runningEnsure().finally(() => {
-      this.runningPromise = undefined;
+  public isRemoteRunning(): Promise<void> {
+    if (this.remoteRunningPromise) return this.remoteRunningPromise;
+    this.remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
+      this.remoteRunningPromise = undefined;
       this.runtime.dispose();
     });
-    return this.runningPromise;
+    return this.remoteRunningPromise;
   }
 
-  private async runningEnsure(): Promise<void> {
+  /** 从 Vite 的真实构建输出报备信令产物，并在构建结束后提交服务。 */
+  public vite(jwtSecret: string) {
+    if (!jwtSecret.trim()) {
+      throw new TypeError("WebRTC 信令 JWT secret 不能为空");
+    }
+    let projectRoot = process.cwd();
+    let artifactPath: string | undefined;
+    return {
+      name: "ubuntu-lib:webrtcProxy",
+      apply: "build" as const,
+      enforce: "post" as const,
+      configResolved: (config: { root: string }) => {
+        projectRoot = config.root;
+      },
+      writeBundle: (
+        output: { dir?: string; file?: string },
+        bundle: Record<string, {
+          type: string;
+          fileName: string;
+          isEntry?: boolean;
+        }>,
+      ) => {
+        const entries = Object.values(bundle).filter(
+          item => item.type === "chunk" && item.isEntry,
+        );
+        if (entries.length !== 1) {
+          throw new Error(`WebRTC 信令构建必须产生唯一入口，当前为 ${entries.length} 个`);
+        }
+        const outputDirectory = output.dir
+          ? resolve(projectRoot, output.dir)
+          : output.file
+            ? dirname(resolve(projectRoot, output.file))
+            : undefined;
+        if (!outputDirectory) {
+          throw new Error("WebRTC 信令构建未提供输出目录");
+        }
+        artifactPath = resolve(outputDirectory, entries[0].fileName);
+      },
+      closeBundle: async () => {
+        if (!artifactPath) {
+          throw new Error("WebRTC 信令构建未产生可报备的入口文件");
+        }
+        store.getState().webrtcProxyActions.register({
+          path: artifactPath,
+          jwtSecret,
+        });
+        await this.isRemoteRunning();
+      },
+    };
+  }
+
+  private async remoteRunningEnsure(): Promise<void> {
     const { ssh, stunServer, webrtcProxy } = store.getState();
     if (!webrtcProxy.path) {
       throw new Error("WebRTC 信令外部实现尚未报备产物路径");

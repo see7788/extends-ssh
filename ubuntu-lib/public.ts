@@ -1,11 +1,17 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, posix } from "node:path";
+import Sftp from "./Sftp/index.ts";
 import store from "./store.ts";
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
 
 export default class Public {
   public readonly ssh = new NodeSSH();
+  public readonly sftp = new Sftp(
+    this.ssh,
+    () => this.sshIsRunning(),
+    () => this.dispose(),
+  );
   private readonly data = {
     connected: false,
     sshRevision: 0,
@@ -139,7 +145,7 @@ mkdir -p ${this.shell(`${remotePath}/releases`)}
 rm -rf ${this.shell(incoming)}
 mkdir -p ${this.shell(incoming)}
 `);
-    await this.ssh.putFile(service.path, `${incoming}/${entry}`);
+    await this.sftp.remoteUpload(service.path, `${incoming}/${entry}`);
 
     const environmentCommand = Object.entries(environment)
       .map(([name, value]) => `${name}=${this.shell(value)}`)
