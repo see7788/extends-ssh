@@ -1,26 +1,26 @@
 import Public from "../public.ts";
 import store from "../store.ts";
-import { dirname, resolve } from "node:path";
+import vitePlugin from "./vitePlugin.ts";
 
 const serviceName = "webrtcsignaling";
 
-export default class WebrtcProxy {
+export default class Webrtcsignaling {
   private readonly runtime = new Public();
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
-    const { ssh, webrtcProxy } = store.getState();
-    const pathname = webrtcProxy.pathname
-      || (webrtcProxy.path.startsWith("/") ? webrtcProxy.path : "/signal");
-    if (!Number.isInteger(webrtcProxy.port) || webrtcProxy.port < 1 || webrtcProxy.port > 65_535) {
-      throw new Error(`WebRTC 信令端口必须是 1-65535 的整数: ${String(webrtcProxy.port)}`);
+    const { ssh, webrtcsignaling } = store.getState();
+    const pathname = webrtcsignaling.pathname
+      || (webrtcsignaling.path.startsWith("/") ? webrtcsignaling.path : "/signal");
+    if (!Number.isInteger(webrtcsignaling.port) || webrtcsignaling.port < 1 || webrtcsignaling.port > 65_535) {
+      throw new Error(`WebRTC 信令端口必须是 1-65535 的整数: ${String(webrtcsignaling.port)}`);
     }
     if (!/^\/[A-Za-z0-9/_-]*$/.test(pathname)) {
       throw new Error(`WebRTC 信令路径无效: ${pathname}`);
     }
     return {
       host: ssh.host,
-      port: webrtcProxy.port,
+      port: webrtcsignaling.port,
       path: pathname,
       secure: false as const,
     };
@@ -35,63 +35,17 @@ export default class WebrtcProxy {
     return this.remoteRunningPromise;
   }
 
-  /** 从 Vite 的真实构建输出报备信令产物，并在构建结束后提交服务。 */
-  public vite(jwtSecret: string) {
-    if (!jwtSecret.trim()) {
-      throw new TypeError("WebRTC 信令 JWT secret 不能为空");
-    }
-    let projectRoot = process.cwd();
-    let artifactPath: string | undefined;
-    return {
-      name: "ubuntu-lib:webrtcProxy",
-      apply: "build" as const,
-      enforce: "post" as const,
-      configResolved: (config: { root: string }) => {
-        projectRoot = config.root;
-      },
-      writeBundle: (
-        output: { dir?: string; file?: string },
-        bundle: Record<string, {
-          type: string;
-          fileName: string;
-          isEntry?: boolean;
-        }>,
-      ) => {
-        const entries = Object.values(bundle).filter(
-          item => item.type === "chunk" && item.isEntry,
-        );
-        if (entries.length !== 1) {
-          throw new Error(`WebRTC 信令构建必须产生唯一入口，当前为 ${entries.length} 个`);
-        }
-        const outputDirectory = output.dir
-          ? resolve(projectRoot, output.dir)
-          : output.file
-            ? dirname(resolve(projectRoot, output.file))
-            : undefined;
-        if (!outputDirectory) {
-          throw new Error("WebRTC 信令构建未提供输出目录");
-        }
-        artifactPath = resolve(outputDirectory, entries[0].fileName);
-      },
-      closeBundle: async () => {
-        if (!artifactPath) {
-          throw new Error("WebRTC 信令构建未产生可报备的入口文件");
-        }
-        store.getState().webrtcProxyActions.register({
-          path: artifactPath,
-          jwtSecret,
-        });
-        await this.isRemoteRunning();
-      },
-    };
+  /** 交付 WebRTC 信令完整的开发、构建、报备与远端发布生命周期。 */
+  public vitePlugin(options: { entry: string; jwtSecret: string }) {
+    return vitePlugin(this, options);
   }
 
   private async remoteRunningEnsure(): Promise<void> {
-    const { ssh, stunServer, webrtcProxy } = store.getState();
-    if (!webrtcProxy.path) {
+    const { ssh, stunServer, webrtcsignaling } = store.getState();
+    if (!webrtcsignaling.path) {
       throw new Error("WebRTC 信令外部实现尚未报备产物路径");
     }
-    if (!webrtcProxy.jwtSecret) {
+    if (!webrtcsignaling.jwtSecret) {
       throw new Error("WebRTC 信令外部实现尚未报备 JWT secret");
     }
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
@@ -100,7 +54,7 @@ export default class WebrtcProxy {
     const state = this.state;
     await this.runtime.serviceIsRunning({
       name: serviceName,
-      path: webrtcProxy.path,
+      path: webrtcsignaling.path,
       environment: {
         WS_NO_BUFFER_UTIL: "1",
         WS_NO_UTF_8_VALIDATE: "1",
@@ -108,7 +62,7 @@ export default class WebrtcProxy {
           iceServers: [{ urls: `stun:${ssh.host}:${stunServer.port}` }],
         }),
         WEBRTC_SIGNALING_HOSTNAME: "0.0.0.0",
-        WEBRTC_SIGNALING_JWT_SECRET: webrtcProxy.jwtSecret,
+        WEBRTC_SIGNALING_JWT_SECRET: webrtcsignaling.jwtSecret,
         WEBRTC_SIGNALING_PATH: state.path,
         WEBRTC_SIGNALING_PORT: String(state.port),
         WEBRTC_SIGNALING_TOKEN_TTL_SECONDS: "300",

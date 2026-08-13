@@ -1,7 +1,7 @@
 import Forward from "./Forward/index.ts";
 import StunServer from "./StunServer/index.ts";
 import Vite from "./Vite/index.ts";
-import WebrtcProxy from "./WebrtcProxy/index.ts";
+import Webrtcsignaling from "./Webrtcsignaling/index.ts";
 import Pm2 from "./Pm2.ts";
 import Public from "./public.ts";
 
@@ -19,7 +19,7 @@ class Ubuntu {
   /** 让 Vite 配置消费开发隧道和构建发布场景。 */
   public readonly vite = new Vite(this.forward);
   /** 交付 WebRTC 信令连接数据并确保信令服务可用。 */
-  public readonly webrtcProxy = new WebrtcProxy();
+  public readonly webrtcsignaling = new Webrtcsignaling();
 }
 
 export default new Ubuntu();

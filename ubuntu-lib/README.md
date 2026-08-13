@@ -10,14 +10,14 @@ ubuntu-lib/
 │   ├── forward: Forward  维护本地、远端端点组成的 SSH 转发
 │   ├── sftp: Sftp  交付本地与远端之间的双向文件传输
 │   ├── stunServer: StunServer  交付 STUN 数据并保障 Coturn
-│   ├── webrtcProxy: WebrtcProxy  交付并保障 WebRTC 信令
+│   ├── webrtcsignaling: Webrtcsignaling  交付并保障 WebRTC 信令
 │   ├── vite: Vite  交付开发隧道与构建发布能力
 │   └── pm2: Pm2  交付并维护远程 PM2 进程数据
 ├── store.ts                 # 内部主仓库，只组合根配置和独立切片
 │   ├── ssh  SSH 连接所需的外部固定数据
 │   ├── mainDomain: string  已备案主域名；Vite 据此生产端口子域名
 │   ├── remoteRoot: string  所有远端发布共同使用的私有根路径
-│   └── 组合 StunServer、WebrtcProxy 配置切片
+│   └── 组合 StunServer、Webrtcsignaling 配置切片
 ├── Forward/
 │   └── index.ts             # 单 class 的 SSH 端口转发生产者
 │       ├── register()  注册一组本地、远端配置并返回运行时实例
@@ -36,14 +36,16 @@ ubuntu-lib/
 │   └── index.ts             # STUN 服务生产者
 │       ├── readonly state  交付 host、port 和 secure
 │       └── isRemoteRunning(): Promise<void>  保障 Coturn 并验证公网 STUN 响应
-├── WebrtcProxy/
+├── Webrtcsignaling/
 │   ├── store.ts             # WebRTC 信令专属切片
-│   │   ├── webrtcProxy  仅保存外部产物路径、JWT secret、信令端口和路径
-│   │   └── webrtcProxyActions.register()  接收专属 Vite 插件的路径和 JWT secret 报备
+│   │   ├── webrtcsignaling  仅保存外部产物路径、JWT secret、信令端口和路径
+│   │   └── webrtcsignalingActions.register()  接收专属 Vite 插件的路径和 JWT secret 报备
+│   ├── vitePlugin.ts        # WebRTC 信令专属 Vite 生命周期
+│   │   └── 统一开发代理、源码进程、服务环境、构建输出识别和构建后提交
 │   └── index.ts             # WebRTC 信令生产者
 │       ├── readonly state  交付 host、port、path 和 secure
 │       ├── isRemoteRunning(): Promise<void>  无参数发布并验证 HTTP、凭证和 WebSocket 信令
-│       └── vite(jwtSecret): Plugin  从真实 bundle 报备入口并在构建结束后提交
+│       └── vitePlugin({ entry, jwtSecret }): Plugin  只接收外部实现不可推导的源码事实
 ├── Vite/
 │   └── index.ts             # Vite 公网开发与发布消费场景
 │       ├── honoReact(): Plugin  开发时建立隧道，构建时发布 Hono 与全部 React 产物
@@ -159,8 +161,9 @@ export default defineConfig({
 });
 ```
 
-WebRTC 信令源码项目直接在 Vite 配置中使用专属插件。插件从 Rollup 的真实 bundle 输出取得
-唯一入口，内部完成 store 报备、远端路径派生和构建后提交，不需要额外的报备文件：
+WebRTC 信令源码项目直接在 Vite 配置中使用专属插件。外部只提供源码入口和 JWT secret；
+插件统一完成开发代理、源码进程、环境注入、构建、真实产物报备和远端提交，不需要额外的
+Vite 辅助文件或报备文件：
 
 ```ts
 import ubuntu from "ubuntu-lib/index.ts";
@@ -168,7 +171,10 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [
-    ubuntu.webrtcProxy.vite("webrtcsignaling-open-issuer"),
+    ubuntu.webrtcsignaling.vitePlugin({
+      entry: "./server.ts",
+      jwtSecret: "webrtcsignaling-open-issuer",
+    }),
   ],
 });
 ```
@@ -179,12 +185,12 @@ export default defineConfig({
 ```ts
 import ubuntu from "ubuntu-lib/index.ts";
 
-const peerServer = ubuntu.webrtcProxy.state;
+const signalingServer = ubuntu.webrtcsignaling.state;
 const stunServer = ubuntu.stunServer.state;
-const signalingProtocol = peerServer.secure ? "wss" : "ws";
+const signalingProtocol = signalingServer.secure ? "wss" : "ws";
 const stunProtocol = stunServer.secure ? "stuns" : "stun";
 const signaling = new WebSocket(
-  `${signalingProtocol}://${peerServer.host}:${peerServer.port}${peerServer.path}`,
+  `${signalingProtocol}://${signalingServer.host}:${signalingServer.port}${signalingServer.path}`,
 );
 const connection = new RTCPeerConnection({
   iceServers: [{ urls: `${stunProtocol}:${stunServer.host}:${stunServer.port}` }],

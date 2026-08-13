@@ -1,5 +1,5 @@
 import stunServerStore from "./StunServer/store.ts";
-import webrtcProxyStore from "./WebrtcProxy/store.ts";
+import webrtcsignalingStore from "./Webrtcsignaling/store.ts";
 import cwdPersist from "extends-zustand/cwdPersist";
 import type { ImmerStateCreator } from "extends-zustand/immerStateCreator";
 import { homedir } from "node:os";
@@ -20,11 +20,11 @@ type UbuntuStore = {
 };
 
 type StunServerStore = ReturnType<typeof stunServerStore>;
-type WebrtcProxyStore = ReturnType<typeof webrtcProxyStore>;
+type WebrtcsignalingStore = ReturnType<typeof webrtcsignalingStore>;
 
 type Store = UbuntuStore
   & StunServerStore
-  & WebrtcProxyStore;
+  & WebrtcsignalingStore;
 
 const ubuntuStore: ImmerStateCreator<UbuntuStore> = () => ({
   ssh: {
@@ -44,7 +44,7 @@ export default createStore<Store>()(
     initializer: immer<Store>((set, get, api) => ({
       ...ubuntuStore(set, get, api),
       ...stunServerStore(set, get, api),
-      ...webrtcProxyStore(set, get, api),
+      ...webrtcsignalingStore(set, get, api),
     })),
   }),
 );
