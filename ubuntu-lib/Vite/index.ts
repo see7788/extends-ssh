@@ -5,6 +5,7 @@ import { createRequire, isBuiltin } from "node:module";
 import compressing from "compressing";
 import { init, parse } from "es-module-lexer";
 import type { Plugin, ResolvedConfig, ViteDevServer } from "vite";
+import type Apt from "../Apt/index.ts";
 import type Forward from "../Forward/index.ts";
 import type Nginx from "../Nginx/index.ts";
 import type Pm2 from "../Pm2/index.ts";
@@ -15,6 +16,7 @@ import store from "../store.ts";
 type RegisteredForward = ReturnType<Forward["register"]>;
 
 export default abstract class Vite {
+  protected abstract readonly apt: Apt;
   protected abstract readonly forward: Forward;
   protected abstract readonly nginx: Nginx;
   protected abstract readonly pm2: Pm2;
@@ -419,6 +421,7 @@ printf static > ${this.shell(`${remotePath}/.extends-ssh-kind`)}
   }
 
   private async connect(): Promise<void> {
+    await this.apt.isRemoteRunning();
     await this.ssh.isRunning();
     await this.ssh.execute(`mkdir -p ${this.shell(store.getState().public.remoteRoot)}`);
   }

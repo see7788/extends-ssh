@@ -1,5 +1,8 @@
+import Apt from "./Apt/index.ts";
+import Docker from "./Docker/index.ts";
 import Forward from "./Forward/index.ts";
 import Nginx from "./Nginx/index.ts";
+import Nodejs from "./Nodejs/index.ts";
 import Peerjs from "./Peerjs/index.ts";
 import Pm2 from "./Pm2/index.ts";
 import Sftp from "./Sftp/index.ts";
@@ -11,12 +14,30 @@ import store from "./store.ts";
 
 const ssh = new Ssh();
 
+class AptRuntime extends Apt {
+  protected readonly ssh = ssh;
+}
+const apt = new AptRuntime();
+
+class NodejsRuntime extends Nodejs {
+  protected readonly apt = apt;
+  protected readonly ssh = ssh;
+}
+const nodejs = new NodejsRuntime();
+
+class DockerRuntime extends Docker {
+  protected readonly apt = apt;
+  protected readonly ssh = ssh;
+}
+const docker = new DockerRuntime();
+
 class SftpRuntime extends Sftp {
   protected readonly ssh = ssh;
 }
 const sftp = new SftpRuntime();
 
 class Pm2Runtime extends Pm2 {
+  protected readonly nodejs = nodejs;
   protected readonly ssh = ssh;
 }
 const pm2 = new Pm2Runtime();
@@ -27,22 +48,26 @@ class ForwardRuntime extends Forward {
 const forward = new ForwardRuntime();
 
 class NginxRuntime extends Nginx {
+  protected readonly apt = apt;
   protected readonly ssh = ssh;
 }
 const nginx = new NginxRuntime();
 
 class PeerjsRuntime extends Peerjs {
+  protected readonly docker = docker;
   protected readonly nginx = nginx;
   protected readonly ssh = ssh;
 }
 const peerjs = new PeerjsRuntime();
 
 class StunServerRuntime extends StunServer {
+  protected readonly docker = docker;
   protected readonly ssh = ssh;
 }
 const stunServer = new StunServerRuntime();
 
 class ViteRuntime extends Vite {
+  protected readonly apt = apt;
   protected readonly forward = forward;
   protected readonly nginx = nginx;
   protected readonly pm2 = pm2;
@@ -65,6 +90,12 @@ class Ubuntu {
     const { domain, remoteRoot } = store.getState().public;
     return { domain, remoteRoot };
   }
+  /** 保障远端 Ubuntu 基础软件包与命令可用。 */
+  public readonly apt = apt;
+  /** 保障远端 Docker daemon 可用。 */
+  public readonly docker = docker;
+  /** 交付并保障固定版本的远端 Node.js。 */
+  public readonly nodejs = nodejs;
   /** 交付 SSH 连接配置、会话与远程命令能力。 */
   public readonly ssh = ssh;
   /** 交付域名数据，并维护远端 HTTPS、静态与反向代理路由。 */

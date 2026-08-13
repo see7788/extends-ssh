@@ -1,8 +1,10 @@
+import type Docker from "../Docker/index.ts";
 import type Nginx from "../Nginx/index.ts";
 import type Ssh from "../Ssh/index.ts";
 import store from "../store.ts";
 
 export default abstract class Peerjs {
+  protected abstract readonly docker: Docker;
   protected abstract readonly nginx: Nginx;
   protected abstract readonly ssh: Ssh;
   private remoteRunningPromise?: Promise<void>;
@@ -33,6 +35,7 @@ export default abstract class Peerjs {
   private async remoteRunningEnsure(): Promise<void> {
     const { peerjs } = store.getState();
     const configuration = `${peerjs.image}|${peerjs.listenPort}|${peerjs.pathname}|${peerjs.key}`;
+    await this.docker.isRemoteRunning();
     await this.ssh.execute(`
 set -e
 docker info >/dev/null

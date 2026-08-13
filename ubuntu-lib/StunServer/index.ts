@@ -1,9 +1,11 @@
 import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
+import type Docker from "../Docker/index.ts";
 import type Ssh from "../Ssh/index.ts";
 import store from "../store.ts";
 
 export default abstract class StunServer {
+  protected abstract readonly docker: Docker;
   protected abstract readonly ssh: Ssh;
   private remoteRunningPromise?: Promise<void>;
 
@@ -24,6 +26,7 @@ export default abstract class StunServer {
 
     const executionPromise = (async () => {
       const state = this.state;
+      await this.docker.isRemoteRunning();
       await this.ssh.execute(`
 set -e
 docker info >/dev/null

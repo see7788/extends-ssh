@@ -1,3 +1,4 @@
+import type Apt from "../Apt/index.ts";
 import type Ssh from "../Ssh/index.ts";
 import store from "../store.ts";
 
@@ -19,6 +20,7 @@ type StaticRoute = {
 type Route = Pick<ProxyRoute, "name" | "hostname">;
 
 export default abstract class Nginx {
+  protected abstract readonly apt: Apt;
   protected abstract readonly ssh: Ssh;
   private remoteRunningPromise?: Promise<void>;
 
@@ -102,6 +104,7 @@ rm -f ${this.shell(this.routePath(hostname, name))} ${this.shell(this.legacyPath
   }
 
   private async remoteRunningEnsure(): Promise<void> {
+    await this.apt.isRemoteRunning();
     await this.ssh.execute(`
 set -e
 NGINX=/www/server/nginx/sbin/nginx

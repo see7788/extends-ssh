@@ -1,8 +1,8 @@
-import type Nodejs from "../Nodejs/index.ts";
+import type Apt from "../Apt/index.ts";
 import type Ssh from "../Ssh/index.ts";
 
-export default abstract class Pm2 {
-  protected abstract readonly nodejs: Nodejs;
+export default abstract class Docker {
+  protected abstract readonly apt: Apt;
   protected abstract readonly ssh: Ssh;
   private remoteRunningPromise?: Promise<void>;
 
@@ -18,21 +18,17 @@ export default abstract class Pm2 {
   }
 
   private async remoteRunningEnsure(): Promise<void> {
-    await this.nodejs.isRemoteRunning();
+    await this.apt.isRemoteRunning();
     await this.ssh.execute(`
 set -e
-if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi
-PM2="$(command -v pm2)"
-test -x "$PM2"
-if [ "$PM2" != /usr/local/bin/pm2 ]; then
-  ln -sfn "$PM2" /usr/local/bin/pm2
+export DEBIAN_FRONTEND=noninteractive
+if ! command -v docker >/dev/null 2>&1; then
+  apt-get update -qq
+  apt-get install -y -qq --no-install-recommends docker.io >/dev/null
 fi
-pm2 ping >/dev/null
-pm2 startup systemd -u root --hp /root >/dev/null
-pm2 save --force >/dev/null
-systemctl enable pm2-root >/dev/null
-systemctl is-enabled --quiet pm2-root
-pm2 --version >/dev/null
+systemctl enable docker --now >/dev/null
+systemctl is-active --quiet docker
+docker info >/dev/null
 `);
   }
 }
