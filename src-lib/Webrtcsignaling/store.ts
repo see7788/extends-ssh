@@ -23,13 +23,13 @@ import type { SSHExecCommandResponse } from "node-ssh";
 import type { Plugin, ViteDevServer } from "vite";
 
 type WebrtcsignalingSlice = {
-  webrtcsignaling: {
+  Webrtcsignaling: {
     entry: string;
     path: string;
     listenPort: 9001;
     pathname: "/signal";
   };
-  webrtcsignalingActions: {
+  WebrtcsignalingActions: {
     register(registration: { entry: string; path: string }): void;
     isRemoteRunning(): Promise<void>;
     vitePlugin(options: { entry: string } | { projectName: string }): Plugin;
@@ -37,11 +37,11 @@ type WebrtcsignalingSlice = {
 };
 
 type WebrtcsignalingDependencies = {
-  public: {
+  Public: {
     domain: string;
     remoteRoot: string;
   };
-  nginxActions: {
+  NginxActions: {
     proxyRouteIsRunning(route: {
       name: string;
       hostname: string;
@@ -49,17 +49,17 @@ type WebrtcsignalingDependencies = {
       upstreamPort: number;
     }): Promise<void>;
   };
-  pm2Actions: {
+  Pm2Actions: {
     isRemoteRunning(): Promise<void>;
   };
-  sftpActions: {
+  SftpActions: {
     remoteDirectoryUpload(
       localPath: string,
       remotePath: string,
       validate: (localPath: string) => boolean,
     ): Promise<void>;
   };
-  sshActions: {
+  SshActions: {
     execute(command: string): Promise<SSHExecCommandResponse>;
   };
 };
@@ -177,9 +177,9 @@ const s: immerStateCreator<
   let running: Promise<void> | undefined;
   const shell = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
   const serviceRead = () => ({
-    host: `webrtc.${get().public.domain.trim().toLowerCase()}`,
+    host: `webrtc.${get().Public.domain.trim().toLowerCase()}`,
     port: 443 as const,
-    path: get().webrtcsignaling.pathname,
+    path: get().Webrtcsignaling.pathname,
     secure: true as const,
   });
   const register = (registration: { entry: string; path: string }): void => {
@@ -190,15 +190,15 @@ const s: immerStateCreator<
       throw new TypeError(`WebRTC 信令 TypeScript 入口无效: ${registration.entry}`);
     }
     set(state => {
-      state.webrtcsignaling.entry = registration.entry;
-      state.webrtcsignaling.path = registration.path;
+      state.Webrtcsignaling.entry = registration.entry;
+      state.Webrtcsignaling.path = registration.path;
     });
   };
   const isRemoteRunning = (): Promise<void> => {
     if (running) return running;
     const execution = (async () => {
       const serviceName = "webrtcsignaling";
-      const { entry, path, pathname, listenPort } = get().webrtcsignaling;
+      const { entry, path, pathname, listenPort } = get().Webrtcsignaling;
       if (!path || !entry) throw new Error("WebRTC 信令外部实现尚未报备源码目录和入口");
       if (!isAbsolute(path) || !existsSync(path) || !lstatSync(path).isDirectory()) {
         throw new Error(`WebRTC 信令源码目录无效: ${path}`);
@@ -249,7 +249,7 @@ const s: immerStateCreator<
           Object.entries(dependencies).sort(([left], [right]) => left.localeCompare(right)),
         ),
       }, null, 2)}\n`;
-      const remoteRoot = get().public.remoteRoot;
+      const remoteRoot = get().Public.remoteRoot;
       if (
         !remoteRoot.startsWith("/")
         || remoteRoot.includes("\0")
@@ -300,8 +300,8 @@ const s: immerStateCreator<
       const current = `${remotePath}/current`;
       const next = `${remotePath}/.current-next`;
 
-      await get().pm2Actions.isRemoteRunning();
-      const readiness = await get().sshActions.execute(`
+      await get().Pm2Actions.isRemoteRunning();
+      const readiness = await get().SshActions.execute(`
 set -e
 CURRENT_REVISION="$(cat ${shell(`${current}/.src-service-revision`)} 2>/dev/null || true)"
 PID="$(pm2 pid ${shell(serviceName)} 2>/dev/null || true)"
@@ -315,13 +315,13 @@ else
 fi
 `);
       if (readiness.stdout.trim() !== "ready") {
-        await get().sshActions.execute(`
+        await get().SshActions.execute(`
 set -e
 mkdir -p ${shell(`${remotePath}/releases`)}
 rm -rf ${shell(incoming)}
 mkdir -p ${shell(incoming)}
 `);
-        await get().sftpActions.remoteDirectoryUpload(path, incoming, sourceIncluded);
+        await get().SftpActions.remoteDirectoryUpload(path, incoming, sourceIncluded);
         const environmentCommand = Object.entries(environment)
           .sort(([left], [right]) => left.localeCompare(right))
           .map(([name, value]) => `${name}=${shell(value)}`)
@@ -333,7 +333,7 @@ mkdir -p ${shell(incoming)}
           `exec env ${environmentCommand} ./node_modules/.bin/tsx ${shell(entry)}`,
           "",
         ].join("\n");
-        await get().sshActions.execute(`
+        await get().SshActions.execute(`
 set -e
 if [ -d ${shell(release)} ]; then
   rm -rf ${shell(incoming)}
@@ -348,7 +348,7 @@ else
   mv ${shell(incoming)} ${shell(release)}
 fi
 `);
-        await get().sshActions.execute(`
+        await get().SshActions.execute(`
 set -e
 PREVIOUS="$(readlink -f ${shell(current)} 2>/dev/null || true)"
 rollback() {
@@ -386,7 +386,7 @@ trap - ERR
 `);
       }
       const state = serviceRead();
-      await get().nginxActions.proxyRouteIsRunning({
+      await get().NginxActions.proxyRouteIsRunning({
         name: serviceName,
         hostname: state.host,
         pathname: state.path,
@@ -440,13 +440,13 @@ trap - ERR
   };
 
   return {
-    webrtcsignaling: {
+    Webrtcsignaling: {
       entry: "",
       path: "",
       listenPort: 9001,
       pathname: "/signal",
     },
-    webrtcsignalingActions: {
+    WebrtcsignalingActions: {
       register,
       isRemoteRunning,
       vitePlugin(options) {
@@ -469,7 +469,7 @@ trap - ERR
         }
         const entry = options.entry.trim();
         if (!entry) throw new TypeError("WebRTC 信令入口不能为空");
-        const { listenPort, pathname } = get().webrtcsignaling;
+        const { listenPort, pathname } = get().Webrtcsignaling;
         const servicePort = listenPort + 1;
         if (servicePort > 65_535) {
           throw new RangeError("WebRTC 信令开发服务端口超出范围");

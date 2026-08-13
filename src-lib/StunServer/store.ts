@@ -5,23 +5,23 @@ import type { SSHExecCommandResponse } from "node-ssh";
 import type { Plugin } from "vite";
 
 type StunServerSlice = {
-  stunServer: {
+  StunServer: {
     port: number;
   };
-  stunServerActions: {
+  StunServerActions: {
     isRemoteRunning(): Promise<void>;
     vitePlugin(): Plugin;
   };
 };
 
 type StunServerDependencies = {
-  ssh: {
+  Ssh: {
     host: string;
   };
-  dockerActions: {
+  DockerActions: {
     isRemoteRunning(): Promise<void>;
   };
-  sshActions: {
+  SshActions: {
     execute(command: string): Promise<SSHExecCommandResponse>;
   };
 };
@@ -29,11 +29,11 @@ type StunServerDependencies = {
 const s: immerStateCreator<StunServerSlice, StunServerDependencies> = (_set, get) => {
   let running: Promise<void> | undefined;
   const serviceRead = () => {
-    const { ssh, stunServer } = get();
-    if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
-      throw new TypeError(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
+    const { Ssh, StunServer } = get();
+    if (!Number.isInteger(StunServer.port) || StunServer.port < 1 || StunServer.port > 65_535) {
+      throw new TypeError(`STUN 端口必须是 1-65535 的整数: ${String(StunServer.port)}`);
     }
-    return { host: ssh.host, port: stunServer.port, secure: false as const };
+    return { host: Ssh.host, port: StunServer.port, secure: false as const };
   };
   const bindingRequest = (host: string, port: number): Promise<void> =>
     new Promise((resolve, reject) => {
@@ -77,14 +77,14 @@ const s: immerStateCreator<StunServerSlice, StunServerDependencies> = (_set, get
     });
 
   return {
-    stunServer: { port: 3478 },
-    stunServerActions: {
+    StunServer: { port: 3478 },
+    StunServerActions: {
       isRemoteRunning() {
         if (running) return running;
         const execution = (async () => {
           const state = serviceRead();
-          await get().dockerActions.isRemoteRunning();
-          await get().sshActions.execute(`
+          await get().DockerActions.isRemoteRunning();
+          await get().SshActions.execute(`
 set -e
 docker info >/dev/null
 if docker inspect coturn >/dev/null 2>&1; then

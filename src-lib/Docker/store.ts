@@ -2,16 +2,16 @@ import type { ImmerStateCreator as immerStateCreator } from "extends-zustand/imm
 import type { SSHExecCommandResponse } from "node-ssh";
 
 type DockerSlice = {
-  dockerActions: {
+  DockerActions: {
     isRemoteRunning(): Promise<void>;
   };
 };
 
 type DockerDependencies = {
-  aptActions: {
+  AptActions: {
     isRemoteRunning(): Promise<void>;
   };
-  sshActions: {
+  SshActions: {
     execute(command: string): Promise<SSHExecCommandResponse>;
   };
 };
@@ -19,12 +19,12 @@ type DockerDependencies = {
 const s: immerStateCreator<DockerSlice, DockerDependencies> = (_set, get) => {
   let running: Promise<void> | undefined;
   return {
-    dockerActions: {
+    DockerActions: {
       isRemoteRunning() {
         if (running) return running;
         const execution = (async () => {
-          await get().aptActions.isRemoteRunning();
-          await get().sshActions.execute(`
+          await get().AptActions.isRemoteRunning();
+          await get().SshActions.execute(`
 set -e
 export DEBIAN_FRONTEND=noninteractive
 if ! command -v docker >/dev/null 2>&1; then

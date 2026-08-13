@@ -2,13 +2,13 @@ import type { ImmerStateCreator as immerStateCreator } from "extends-zustand/imm
 import type { SSHExecCommandResponse } from "node-ssh";
 
 type AptSlice = {
-  aptActions: {
+  AptActions: {
     isRemoteRunning(): Promise<void>;
   };
 };
 
 type SshDependency = {
-  sshActions: {
+  SshActions: {
     execute(command: string): Promise<SSHExecCommandResponse>;
   };
 };
@@ -16,10 +16,10 @@ type SshDependency = {
 const s: immerStateCreator<AptSlice, SshDependency> = (_set, get) => {
   let running: Promise<void> | undefined;
   return {
-    aptActions: {
+    AptActions: {
       isRemoteRunning() {
         if (running) return running;
-        const execution = get().sshActions.execute(`
+        const execution = get().SshActions.execute(`
 set -e
 test -x /usr/bin/apt-get
 export DEBIAN_FRONTEND=noninteractive

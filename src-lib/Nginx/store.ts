@@ -17,12 +17,12 @@ type StaticRoute = {
 };
 
 type NginxSlice = {
-  nginx: {
+  Nginx: {
     httpPort: 80;
     httpsPort: 443;
     secure: true;
   };
-  nginxActions: {
+  NginxActions: {
     isRemoteRunning(): Promise<void>;
     proxyRouteIsRunning(route: ProxyRoute): Promise<void>;
     staticRouteIsRunning(route: StaticRoute): Promise<void>;
@@ -31,13 +31,13 @@ type NginxSlice = {
 };
 
 type NginxDependencies = {
-  public: {
+  Public: {
     domain: string;
   };
-  aptActions: {
+  AptActions: {
     isRemoteRunning(): Promise<void>;
   };
-  sshActions: {
+  SshActions: {
     execute(command: string): Promise<SSHExecCommandResponse>;
   };
 };
@@ -88,8 +88,8 @@ const s: immerStateCreator<NginxSlice, NginxDependencies> = (_set, get) => {
   const isRemoteRunning = (): Promise<void> => {
     if (running) return running;
     const execution = (async () => {
-      await get().aptActions.isRemoteRunning();
-      await get().sshActions.execute(`
+      await get().AptActions.isRemoteRunning();
+      await get().SshActions.execute(`
 set -e
 NGINX=/www/server/nginx/sbin/nginx
 test -x "$NGINX"
@@ -117,7 +117,7 @@ ufw reload >/dev/null
     await isRemoteRunning();
     const hostPath = hostnamePath(route.hostname);
     const directory = routeDirectory(route.hostname);
-    await get().sshActions.execute(`
+    await get().SshActions.execute(`
 set -e
 mkdir -p ${shell(directory)}
 rm -f ${shell(legacyPath(route.name))}
@@ -160,12 +160,12 @@ HTTPS
   };
 
   return {
-    nginx: {
+    Nginx: {
       httpPort: 80,
       httpsPort: 443,
       secure: true,
     },
-    nginxActions: {
+    NginxActions: {
       isRemoteRunning,
       async proxyRouteIsRunning(route) {
         const name = nameRequired(route.name);
@@ -210,7 +210,7 @@ HTTPS
         const name = nameRequired(route.name);
         const hostname = hostnameRequired(route.hostname);
         await isRemoteRunning();
-        await get().sshActions.execute(`
+        await get().SshActions.execute(`
 set -e
 rm -f ${shell(routePath(hostname, name))} ${shell(legacyPath(name))}
 /www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf

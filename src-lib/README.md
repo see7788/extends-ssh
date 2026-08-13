@@ -5,7 +5,7 @@
 ```ts
 import ubuntuStore from "src-lib/index.ts";
 
-await ubuntuStore.getState().sshActions.isRunning();
+await ubuntuStore.getState().SshActions.isRunning();
 ```
 
 ## 项目结构
@@ -17,43 +17,43 @@ src-lib/
 ├── store.ts                         # 只组合切片并注入配置持久化
 ├── Public/
 │   └── store.ts                     # 公共配置生产者
-│       └── public                   # 域名与远端根目录
+│       └── Public                   # 域名与远端根目录
 ├── Ssh/
 │   └── store.ts                     # SSH 配置与会话生产者
-│       └── sshActions               # isRunning、execute、runtime、dispose
+│       └── Ssh、SshActions          # 配置、isRunning、execute、runtime、dispose
 ├── Apt/
 │   └── store.ts                     # Ubuntu 基础包生产者
-│       └── aptActions               # isRemoteRunning
+│       └── AptActions               # isRemoteRunning
 ├── Nodejs/
 │   └── store.ts                     # Node.js 配置与远端运行环境生产者
-│       └── nodejsActions            # 运行验证、部署依赖生成、生产依赖安装
+│       └── Nodejs、NodejsActions    # 配置、运行验证、部署依赖生成、生产依赖安装
 ├── Docker/
 │   └── store.ts                     # Docker 运行环境生产者
-│       └── dockerActions            # isRemoteRunning
+│       └── DockerActions            # isRemoteRunning
 ├── Sftp/
 │   └── store.ts                     # SFTP 文件传输生产者
-│       └── sftpActions              # 文件传输、原子目录替换、远端文本读写
+│       └── SftpActions              # 文件传输、原子目录替换、远端文本读写
 ├── Pm2/
 │   └── store.ts                     # PM2 运行环境生产者
-│       └── pm2Actions               # 运行验证、进程启动验证、进程关闭
+│       └── Pm2Actions               # 运行验证、进程启动验证、进程关闭
 ├── Forward/
 │   └── store.ts                     # SSH 远端转发生产者
-│       └── forwardActions           # register、dispose
+│       └── ForwardActions           # register、dispose
 ├── Nginx/
 │   └── store.ts                     # Nginx 配置与路由生产者
-│       └── nginxActions             # 运行验证、反向代理、静态路由、关闭路由
+│       └── Nginx、NginxActions      # 配置、运行验证、反向代理、静态路由、关闭路由
 ├── Peerjs/
 │   └── store.ts                     # PeerJS 配置与服务生产者
-│       └── peerjsActions            # isRemoteRunning
+│       └── Peerjs、PeerjsActions    # 配置、isRemoteRunning
 ├── StunServer/
 │   └── store.ts                     # STUN 配置与 Coturn 服务生产者
-│       └── stunServerActions        # isRemoteRunning、vitePlugin
+│       └── StunServer、StunServerActions # 配置、isRemoteRunning、vitePlugin
 ├── Webrtcsignaling/
 │   └── store.ts                     # 私有信令配置、部署与专属 Vite 插件
-│       └── webrtcsignalingActions   # register、isRemoteRunning、vitePlugin
+│       └── Webrtcsignaling、WebrtcsignalingActions # 配置、register、isRemoteRunning、vitePlugin
 └── Vite/
     └── store.ts                     # 无状态的构建流程消费者切片
-        └── viteActions              # forwardPlugin、staticPlugin、nodePlugin
+        └── ViteActions              # forwardPlugin、staticPlugin、nodePlugin
 ```
 
 配置持久化到 `~/.extends-ssh/.zustand/src-lib.json`。actions、NodeSSH、转发连接、子进程和运行中的 Promise 不进入持久化数据。

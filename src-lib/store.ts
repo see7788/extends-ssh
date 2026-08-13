@@ -11,11 +11,11 @@ import sshStore from "./Ssh/store.ts";
 import stunServerStore from "./StunServer/store.ts";
 import viteStore from "./Vite/store.ts";
 import webrtcsignalingStore from "./Webrtcsignaling/store.ts";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import cwdPersist from "extends-zustand/cwdPersist";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createStore } from "zustand";
-import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
+import type {} from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 
 type Store = ReturnType<typeof publicStore>
@@ -32,33 +32,10 @@ type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof webrtcsignalingStore>
   & ReturnType<typeof viteStore>;
 
-type PersistedState = Pick<
-  Store,
-  "public" | "ssh" | "nodejs" | "nginx" | "peerjs" | "stunServer" | "webrtcsignaling"
->;
-
-const persistPath = path.join(
-  homedir(),
-  ".extends-ssh",
-  ".zustand",
-  "src-lib.json",
-);
-const storage: StateStorage = {
-  getItem: () => existsSync(persistPath)
-    ? readFileSync(persistPath, "utf8")
-    : null,
-  setItem: (_name, value) => {
-    mkdirSync(path.dirname(persistPath), { recursive: true });
-    writeFileSync(persistPath, value, "utf8");
-  },
-  removeItem: () => {
-    if (existsSync(persistPath)) rmSync(persistPath);
-  },
-};
-
 const store = createStore<Store>()(
-  persist<Store, [], [["zustand/immer", never]], PersistedState>(
-    immer((set, get, api) => ({
+  cwdPersist<Store, [], [["zustand/immer", never]]>({
+    cwd: path.join(homedir(), ".extends-ssh"),
+    initializer: immer((set, get, api) => ({
       ...publicStore(set, get, api),
       ...sshStore(set, get, api),
       ...aptStore(set, get, api),
@@ -73,20 +50,8 @@ const store = createStore<Store>()(
       ...webrtcsignalingStore(set, get, api),
       ...viteStore(set, get, api),
     })),
-    {
-      name: "src-lib",
-      storage: createJSONStorage<PersistedState>(() => storage),
-      partialize: state => ({
-        public: { ...state.public },
-        ssh: { ...state.ssh },
-        nodejs: { ...state.nodejs },
-        nginx: { ...state.nginx },
-        peerjs: { ...state.peerjs },
-        stunServer: { ...state.stunServer },
-        webrtcsignaling: { ...state.webrtcsignaling },
-      }),
-    },
-  ),
+    name: "src-lib",
+  }),
 );
 
 export default store;

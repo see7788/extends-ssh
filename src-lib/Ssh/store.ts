@@ -2,13 +2,13 @@ import type { ImmerStateCreator as immerStateCreator } from "extends-zustand/imm
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
 
 type SshSlice = {
-  ssh: {
+  Ssh: {
     host: string;
     port: number;
     username: string;
     password: string;
   };
-  sshActions: {
+  SshActions: {
     isRunning(): Promise<void>;
     execute(command: string): Promise<SSHExecCommandResponse>;
     runtime(): {
@@ -36,7 +36,7 @@ const s: immerStateCreator<SshSlice> = (_set, get) => {
         }
         connected = false;
       }
-      await client.connect(get().ssh);
+      await client.connect(get().Ssh);
       const verification = await client.execCommand("true");
       if (verification.code !== 0) {
         client.dispose();
@@ -54,13 +54,13 @@ const s: immerStateCreator<SshSlice> = (_set, get) => {
   };
 
   return {
-    ssh: {
+    Ssh: {
       host: "82.156.162.242",
       port: 54321,
       username: "root",
       password: "9K78s98[98]j.9",
     },
-    sshActions: {
+    SshActions: {
       isRunning,
       async execute(command) {
         await isRunning();

@@ -1,14 +1,14 @@
 import type { ImmerStateCreator as immerStateCreator } from "extends-zustand/immerStateCreator";
 
 type PublicSlice = {
-  public: {
+  Public: {
     domain: string;
     remoteRoot: string;
   };
 };
 
 const s: immerStateCreator<PublicSlice> = () => ({
-  public: {
+  Public: {
     domain: "13520521413.store",
     remoteRoot: "/www/wwwroot/extends-ssh",
   },

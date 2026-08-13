@@ -2,25 +2,25 @@ import type { ImmerStateCreator as immerStateCreator } from "extends-zustand/imm
 import type { SSHExecCommandResponse } from "node-ssh";
 
 type PeerjsSlice = {
-  peerjs: {
+  Peerjs: {
     image: "peerjs/peerjs-server:1.0.2";
     key: "peerjs";
     listenPort: 9000;
     pathname: "/peerjs";
   };
-  peerjsActions: {
+  PeerjsActions: {
     isRemoteRunning(): Promise<void>;
   };
 };
 
 type PeerjsDependencies = {
-  public: {
+  Public: {
     domain: string;
   };
-  dockerActions: {
+  DockerActions: {
     isRemoteRunning(): Promise<void>;
   };
-  nginxActions: {
+  NginxActions: {
     proxyRouteIsRunning(route: {
       name: string;
       hostname: string;
@@ -28,7 +28,7 @@ type PeerjsDependencies = {
       upstreamPort: number;
     }): Promise<void>;
   };
-  sshActions: {
+  SshActions: {
     execute(command: string): Promise<SSHExecCommandResponse>;
   };
 };
@@ -37,20 +37,20 @@ const s: immerStateCreator<PeerjsSlice, PeerjsDependencies> = (_set, get) => {
   let running: Promise<void> | undefined;
   const shell = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
   return {
-    peerjs: {
+    Peerjs: {
       image: "peerjs/peerjs-server:1.0.2",
       key: "peerjs",
       listenPort: 9000,
       pathname: "/peerjs",
     },
-    peerjsActions: {
+    PeerjsActions: {
       isRemoteRunning() {
         if (running) return running;
         const execution = (async () => {
-          const { peerjs } = get();
-          const configuration = `${peerjs.image}|${peerjs.listenPort}|${peerjs.pathname}|${peerjs.key}`;
-          await get().dockerActions.isRemoteRunning();
-          await get().sshActions.execute(`
+          const { Peerjs } = get();
+          const configuration = `${Peerjs.image}|${Peerjs.listenPort}|${Peerjs.pathname}|${Peerjs.key}`;
+          await get().DockerActions.isRemoteRunning();
+          await get().SshActions.execute(`
 set -e
 docker info >/dev/null
 if docker inspect peerjs >/dev/null 2>&1; then
@@ -60,19 +60,19 @@ if docker inspect peerjs >/dev/null 2>&1; then
   fi
 fi
 if ! docker inspect peerjs >/dev/null 2>&1; then
-  docker pull ${shell(peerjs.image)}
+  docker pull ${shell(Peerjs.image)}
   docker run -d --restart=unless-stopped --name peerjs \
     --label ${shell(`extends-ssh.peerjs.configuration=${configuration}`)} \
-    -p 127.0.0.1:${peerjs.listenPort}:9000 \
-    ${shell(peerjs.image)} \
-    --port 9000 --path ${shell(peerjs.pathname)} \
-    --key ${shell(peerjs.key)} --proxied >/dev/null
+    -p 127.0.0.1:${Peerjs.listenPort}:9000 \
+    ${shell(Peerjs.image)} \
+    --port 9000 --path ${shell(Peerjs.pathname)} \
+    --key ${shell(Peerjs.key)} --proxied >/dev/null
 else
   docker start peerjs >/dev/null
 fi
 test "$(docker inspect -f '{{.State.Running}}' peerjs)" = true
 for attempt in $(seq 1 40); do
-  if curl --fail --silent ${shell(`http://127.0.0.1:${peerjs.listenPort}${peerjs.pathname}`)} \
+  if curl --fail --silent ${shell(`http://127.0.0.1:${Peerjs.listenPort}${Peerjs.pathname}`)} \
     | grep -q 'PeerJS'; then
     exit 0
   fi
@@ -82,14 +82,14 @@ docker logs --tail 40 peerjs >&2 || true
 exit 1
 `);
           const state = {
-            host: `webrtc.${get().public.domain.trim().toLowerCase()}`,
-            path: peerjs.pathname,
+            host: `webrtc.${get().Public.domain.trim().toLowerCase()}`,
+            path: Peerjs.pathname,
           };
-          await get().nginxActions.proxyRouteIsRunning({
+          await get().NginxActions.proxyRouteIsRunning({
             name: "peerjs",
             hostname: state.host,
             pathname: state.path,
-            upstreamPort: peerjs.listenPort,
+            upstreamPort: Peerjs.listenPort,
           });
           const health = await fetch(`https://${state.host}${state.path}`, {
             signal: AbortSignal.timeout(10_000),

@@ -14,7 +14,7 @@ type RegisteredForward = {
 };
 
 type ViteSlice = {
-  viteActions: {
+  ViteActions: {
     forwardPlugin(): Plugin;
     staticPlugin(): Plugin;
     nodePlugin(): Plugin;
@@ -22,23 +22,23 @@ type ViteSlice = {
 };
 
 type ViteDependencies = {
-  public: {
+  Public: {
     domain: string;
     remoteRoot: string;
   };
-  forwardActions: {
+  ForwardActions: {
     register(registration: {
       name: string;
       local: { host: string; port: number };
       remote: { host: string; port: number };
     }): RegisteredForward;
   };
-  nginx: {
+  Nginx: {
     httpPort: 80;
     httpsPort: 443;
     secure: true;
   };
-  nginxActions: {
+  NginxActions: {
     proxyRouteIsRunning(route: {
       name: string;
       hostname: string;
@@ -54,14 +54,14 @@ type ViteDependencies = {
     }): Promise<void>;
     routeClose(route: { name: string; hostname: string }): Promise<void>;
   };
-  nodejsActions: {
+  NodejsActions: {
     deploymentPackageCreate(
       buildPath: string,
       projectPath: string,
     ): Promise<{ content: string; name: string }>;
     dependenciesRemoteInstall(projectPath: string): Promise<void>;
   };
-  pm2Actions: {
+  Pm2Actions: {
     processIsRemoteRunning(process: {
       name: string;
       path: string;
@@ -71,7 +71,7 @@ type ViteDependencies = {
     }): Promise<void>;
     processRemoteClose(name: string): Promise<void>;
   };
-  sftpActions: {
+  SftpActions: {
     remoteDirectoryReplace(localPath: string, remotePath: string): Promise<void>;
     remoteTextUpload(text: string, remotePath: string): Promise<void>;
     remoteTextRead(remotePath: string): Promise<string | undefined>;
@@ -86,14 +86,14 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
     return port;
   };
   const serviceRead = (port: number) => ({
-    host: `vite-${portRequired(port)}.dev.${get().public.domain.trim().toLowerCase()}`,
+    host: `vite-${portRequired(port)}.dev.${get().Public.domain.trim().toLowerCase()}`,
     port: 443 as const,
     secure: true as const,
   });
   const remotePath = (port: number): string =>
-    `${get().public.remoteRoot}/vite-${portRequired(port)}`;
+    `${get().Public.remoteRoot}/vite-${portRequired(port)}`;
   const staticRoute = async (port: number, root: string): Promise<void> => {
-    await get().nginxActions.staticRouteIsRunning({
+    await get().NginxActions.staticRouteIsRunning({
       name: `vite-${port}`,
       hostname: serviceRead(port).host,
       pathname: "/",
@@ -102,7 +102,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
     });
   };
   const proxyRoute = async (port: number, upstreamPort: number): Promise<void> => {
-    await get().nginxActions.proxyRouteIsRunning({
+    await get().NginxActions.proxyRouteIsRunning({
       name: `vite-${port}`,
       hostname: serviceRead(port).host,
       pathname: "/",
@@ -139,7 +139,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
   };
 
   return {
-    viteActions: {
+    ViteActions: {
       forwardPlugin() {
         let port = 0;
         let registeredForward: RegisteredForward | undefined;
@@ -153,7 +153,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
               if (!address || typeof address === "string" || address.port !== port) {
                 throw new Error(`Vite 未按项目端口 ${port} 启动`);
               }
-              registeredForward = get().forwardActions.register({
+              registeredForward = get().ForwardActions.register({
                 name: `vite-${port}`,
                 local: { host: "127.0.0.1", port },
                 remote: { host: "127.0.0.1", port: 0 },
@@ -175,13 +175,13 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
               await registeredForward?.close();
               registeredForward = undefined;
               const projectRemotePath = remotePath(port);
-              const kind = await get().sftpActions.remoteTextRead(
+              const kind = await get().SftpActions.remoteTextRead(
                 `${projectRemotePath}/.extends-ssh-kind`,
               );
               if (kind === "static") await staticRoute(port, projectRemotePath);
               if (kind === "node") await proxyRoute(port, port);
               if (!kind) {
-                await get().nginxActions.routeClose({
+                await get().NginxActions.routeClose({
                   name: `vite-${port}`,
                   hostname: serviceRead(port).host,
                 });
@@ -200,7 +200,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
           config: (_config, environment) => environment.command === "serve"
             ? {
                 server: {
-                  allowedHosts: [`.dev.${get().public.domain.trim().toLowerCase()}`],
+                  allowedHosts: [`.dev.${get().Public.domain.trim().toLowerCase()}`],
                   host: "127.0.0.1",
                   strictPort: true,
                 },
@@ -230,9 +230,9 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
             }
             const port = portRequired(config.server.port);
             const projectRemotePath = remotePath(port);
-            await get().sftpActions.remoteDirectoryReplace(buildPath, projectRemotePath);
-            await get().pm2Actions.processRemoteClose(`vite-node-${port}`);
-            await get().sftpActions.remoteTextUpload(
+            await get().SftpActions.remoteDirectoryReplace(buildPath, projectRemotePath);
+            await get().Pm2Actions.processRemoteClose(`vite-node-${port}`);
+            await get().SftpActions.remoteTextUpload(
               "static",
               `${projectRemotePath}/.extends-ssh-kind`,
             );
@@ -261,7 +261,7 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
             if (!existsSync(buildPath)) {
               throw new Error(`Node 构建目录不存在: ${buildPath}`);
             }
-            const deploymentPackage = await get().nodejsActions.deploymentPackageCreate(
+            const deploymentPackage = await get().NodejsActions.deploymentPackageCreate(
               buildPath,
               projectPath,
             );
@@ -273,23 +273,23 @@ const s: immerStateCreator<ViteSlice, ViteDependencies> = (_set, get) => {
             if (!existsSync(entry)) throw new Error(`Node 构建入口不存在: ${entry}`);
             const projectRemotePath = remotePath(port);
             const processName = `vite-node-${port}`;
-            await get().sftpActions.remoteDirectoryReplace(
+            await get().SftpActions.remoteDirectoryReplace(
               buildPath,
               `${projectRemotePath}/dist`,
             );
-            await get().sftpActions.remoteTextUpload(
+            await get().SftpActions.remoteTextUpload(
               deploymentPackage.content,
               `${projectRemotePath}/package.json`,
             );
-            await get().nodejsActions.dependenciesRemoteInstall(projectRemotePath);
-            await get().pm2Actions.processIsRemoteRunning({
+            await get().NodejsActions.dependenciesRemoteInstall(projectRemotePath);
+            await get().Pm2Actions.processIsRemoteRunning({
               name: processName,
               path: projectRemotePath,
               command: `node dist/${deploymentPackage.name}/index.js`,
               port,
               environment: { HOST: "127.0.0.1", PORT: String(port) },
             });
-            await get().sftpActions.remoteTextUpload(
+            await get().SftpActions.remoteTextUpload(
               "node",
               `${projectRemotePath}/.extends-ssh-kind`,
             );

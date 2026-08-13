@@ -3,7 +3,7 @@ import { posix } from "node:path";
 import type { NodeSSH, SSHExecCommandResponse } from "node-ssh";
 
 type SftpSlice = {
-  sftpActions: {
+  SftpActions: {
     remoteUpload(localPath: string, remotePath: string): Promise<void>;
     remoteDirectoryUpload(
       localPath: string,
@@ -18,7 +18,7 @@ type SftpSlice = {
 };
 
 type SshDependency = {
-  sshActions: {
+  SshActions: {
     isRunning(): Promise<void>;
     execute(command: string): Promise<SSHExecCommandResponse>;
     runtime(): {
@@ -31,14 +31,14 @@ type SshDependency = {
 const s: immerStateCreator<SftpSlice, SshDependency> = (_set, get) => {
   const shell = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
   return {
-    sftpActions: {
+    SftpActions: {
     async remoteUpload(localPath, remotePath) {
-      await get().sshActions.isRunning();
-      await get().sshActions.runtime().client.putFile(localPath, remotePath);
+      await get().SshActions.isRunning();
+      await get().SshActions.runtime().client.putFile(localPath, remotePath);
     },
     async remoteDirectoryUpload(localPath, remotePath, validate) {
-      await get().sshActions.isRunning();
-      const uploaded = await get().sshActions.runtime().client.putDirectory(
+      await get().SshActions.isRunning();
+      const uploaded = await get().SshActions.runtime().client.putDirectory(
         localPath,
         remotePath,
         { recursive: true, validate },
@@ -46,22 +46,22 @@ const s: immerStateCreator<SftpSlice, SshDependency> = (_set, get) => {
       if (!uploaded) throw new Error(`远端目录上传失败: ${remotePath}`);
     },
     async remoteDirectoryReplace(localPath, remotePath) {
-      await get().sshActions.isRunning();
+      await get().SshActions.isRunning();
       const revision = `${process.pid}-${Date.now()}`;
       const incomingPath = `${remotePath}.incoming-${revision}`;
       const previousPath = `${remotePath}.previous-${revision}`;
-      await get().sshActions.execute(`
+      await get().SshActions.execute(`
 set -e
 rm -rf ${shell(incomingPath)} ${shell(previousPath)}
 mkdir -p ${shell(incomingPath)}
 `);
       try {
-        await get().sftpActions.remoteDirectoryUpload(
+        await get().SftpActions.remoteDirectoryUpload(
           localPath,
           incomingPath,
           () => true,
         );
-        await get().sshActions.execute(`
+        await get().SshActions.execute(`
 set -e
 PREVIOUS=0
 rollback() {
@@ -84,23 +84,23 @@ rm -rf ${shell(previousPath)}
 trap - ERR
 `);
       } catch (error) {
-        await get().sshActions.execute(`rm -rf ${shell(incomingPath)}`)
+        await get().SshActions.execute(`rm -rf ${shell(incomingPath)}`)
           .catch(() => undefined);
         throw error;
       }
     },
     async remoteTextUpload(text, remotePath) {
-      await get().sshActions.isRunning();
+      await get().SshActions.isRunning();
       const content = Buffer.from(text, "utf8").toString("base64");
-      await get().sshActions.execute(`
+      await get().SshActions.execute(`
 set -e
 mkdir -p ${shell(posix.dirname(remotePath))}
 printf %s ${shell(content)} | base64 -d > ${shell(remotePath)}
 `);
     },
     async remoteTextRead(remotePath) {
-      await get().sshActions.isRunning();
-      const response = await get().sshActions.execute(`
+      await get().SshActions.isRunning();
+      const response = await get().SshActions.execute(`
 if [ -f ${shell(remotePath)} ]; then
   printf exists
   cat ${shell(remotePath)}
@@ -111,8 +111,8 @@ fi
         : undefined;
     },
     async locDownload(remotePath, localPath) {
-      await get().sshActions.isRunning();
-      await get().sshActions.runtime().client.getFile(localPath, remotePath);
+      await get().SshActions.isRunning();
+      await get().SshActions.runtime().client.getFile(localPath, remotePath);
     },
   },
   };

@@ -6,12 +6,12 @@ import type { SSHExecCommandResponse } from "node-ssh";
 import { init, parse } from "es-module-lexer";
 
 type NodejsSlice = {
-  nodejs: {
+  Nodejs: {
     version: string;
     architecture: "linux-x64";
     sha256: string;
   };
-  nodejsActions: {
+  NodejsActions: {
     isRemoteRunning(): Promise<void>;
     deploymentPackageCreate(
       buildPath: string,
@@ -22,10 +22,10 @@ type NodejsSlice = {
 };
 
 type NodejsDependencies = {
-  aptActions: {
+  AptActions: {
     isRemoteRunning(): Promise<void>;
   };
-  sshActions: {
+  SshActions: {
     execute(command: string): Promise<SSHExecCommandResponse>;
   };
 };
@@ -34,26 +34,26 @@ const s: immerStateCreator<NodejsSlice, NodejsDependencies> = (_set, get) => {
   let running: Promise<void> | undefined;
   const shell = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
   return {
-    nodejs: {
+    Nodejs: {
       version: "22.23.2",
       architecture: "linux-x64",
       sha256: "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307",
     },
-    nodejsActions: {
+    NodejsActions: {
       isRemoteRunning() {
         if (running) return running;
         const execution = (async () => {
-          const { version, architecture, sha256 } = get().nodejs;
+          const { version, architecture, sha256 } = get().Nodejs;
           if (!/^\d+\.\d+\.\d+$/.test(version)) {
             throw new TypeError(`Node.js 版本无效: ${version}`);
           }
           if (!/^[a-f0-9]{64}$/.test(sha256)) {
             throw new TypeError(`Node.js SHA-256 无效: ${sha256}`);
           }
-          await get().aptActions.isRemoteRunning();
+          await get().AptActions.isRemoteRunning();
           const archive = `node-v${version}-${architecture}.tar.xz`;
           const nodeRoot = `/opt/node-v${version}-${architecture}`;
-          await get().sshActions.execute(`
+          await get().SshActions.execute(`
 set -e
 NODE_VERSION=${version}
 NODE_ARCHIVE=${archive}
@@ -183,8 +183,8 @@ done
         };
       },
       async dependenciesRemoteInstall(projectPath) {
-        await get().nodejsActions.isRemoteRunning();
-        await get().sshActions.execute(`
+        await get().NodejsActions.isRemoteRunning();
+        await get().SshActions.execute(`
 set -e
 cd ${shell(projectPath)}
 npm install --omit=dev --no-package-lock

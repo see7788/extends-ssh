@@ -2,7 +2,7 @@ import type { ImmerStateCreator as immerStateCreator } from "extends-zustand/imm
 import type { SSHExecCommandResponse } from "node-ssh";
 
 type Pm2Slice = {
-  pm2Actions: {
+  Pm2Actions: {
     isRemoteRunning(): Promise<void>;
     processIsRemoteRunning(process: {
       name: string;
@@ -16,10 +16,10 @@ type Pm2Slice = {
 };
 
 type Pm2Dependencies = {
-  nodejsActions: {
+  NodejsActions: {
     isRemoteRunning(): Promise<void>;
   };
-  sshActions: {
+  SshActions: {
     execute(command: string): Promise<SSHExecCommandResponse>;
   };
 };
@@ -34,12 +34,12 @@ const s: immerStateCreator<Pm2Slice, Pm2Dependencies> = (_set, get) => {
     return name;
   };
   return {
-    pm2Actions: {
+    Pm2Actions: {
       isRemoteRunning() {
         if (running) return running;
         const execution = (async () => {
-          await get().nodejsActions.isRemoteRunning();
-          await get().sshActions.execute(`
+          await get().NodejsActions.isRemoteRunning();
+          await get().SshActions.execute(`
 set -e
 if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi
 PM2="$(command -v pm2)"
@@ -61,7 +61,7 @@ pm2 --version >/dev/null
         return execution;
       },
       async processIsRemoteRunning(process) {
-        await get().pm2Actions.isRemoteRunning();
+        await get().Pm2Actions.isRemoteRunning();
         const name = nameRequired(process.name);
         if (!Number.isInteger(process.port) || process.port < 1 || process.port > 65_535) {
           throw new TypeError(`PM2 进程端口无效: ${String(process.port)}`);
@@ -74,7 +74,7 @@ pm2 --version >/dev/null
             return `${key}=${shell(value)}`;
           })
           .join(" ");
-        await get().sshActions.execute(`
+        await get().SshActions.execute(`
 set -e
 pm2 delete ${shell(name)} >/dev/null 2>&1 || true
 cd ${shell(process.path)}
@@ -103,7 +103,7 @@ exit 1
 `);
       },
       async processRemoteClose(name) {
-        await get().sshActions.execute(`
+        await get().SshActions.execute(`
 if command -v pm2 >/dev/null 2>&1; then
   pm2 delete ${shell(nameRequired(name))} >/dev/null 2>&1 || true
   pm2 save --force >/dev/null 2>&1 || true

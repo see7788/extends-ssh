@@ -25,14 +25,14 @@ type RegisteredForward = {
 };
 
 type ForwardSlice = {
-  forwardActions: {
+  ForwardActions: {
     register(registration: ForwardRegistration): RegisteredForward;
     dispose(): Promise<void>;
   };
 };
 
 type SshDependency = {
-  sshActions: {
+  SshActions: {
     isRunning(): Promise<void>;
     runtime(): {
       client: NodeSSH;
@@ -96,8 +96,8 @@ const s: immerStateCreator<ForwardSlice, SshDependency> = (_set, get) => {
     if (forward.running) return forward.running;
     const running = (async () => {
       try {
-        await get().sshActions.isRunning();
-        const sshRuntime = get().sshActions.runtime();
+        await get().SshActions.isRunning();
+        const sshRuntime = get().SshActions.runtime();
         if (forward.handle && forward.sshRevision === sshRuntime.revision) {
           return { remotePort: forward.handle.port };
         }
@@ -146,7 +146,7 @@ const s: immerStateCreator<ForwardSlice, SshDependency> = (_set, get) => {
   };
 
   return {
-    forwardActions: {
+    ForwardActions: {
       register(registrationInput) {
         const name = registrationInput.name.trim();
         if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) {
