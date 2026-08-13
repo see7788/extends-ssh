@@ -1,13 +1,13 @@
 # ubuntu-lib
 
-`ubuntu-lib` 为 Vite、WebRTC 信令、STUN 和 PM2 分别提供独立的云端生产者。库外统一从
-`ubuntu-lib/index.ts` 引入 `ubuntu`，通过具体成员的 `state` 和方法消费能力。
+`ubuntu-lib` 为 Vite、WebRTC 信令、STUN 和 PM2 分别提供独立的云端生产者。外部服务从
+`ubuntu-lib/store.ts` 向自己的专属切片报备实现数据，再从 `ubuntu-lib/index.ts` 取得具体
+生产者，通过无参数 `isRunning()` 提交并验证服务。
 
 ```text
 ubuntu-lib/
 ├── index.ts                 # 包入口，只组合并暴露根级生产者
 │   ├── forwardLoc: ForwardLoc  维护 SSH 本地端口转发
-│   ├── forwardRemote: ForwardRemote  发布并保障远端服务
 │   ├── stunServer: StunServer  交付 STUN 数据并保障 Coturn
 │   ├── webrtcProxy: WebrtcProxy  交付并保障 WebRTC 信令
 │   ├── vite: Vite  交付开发隧道与构建发布能力
@@ -15,16 +15,11 @@ ubuntu-lib/
 ├── store.ts                 # 内部主仓库，只组合根配置和独立切片
 │   ├── ssh  SSH 连接所需的外部固定数据
 │   ├── mainDomain: string  已备案主域名；Vite 据此生产端口子域名
-│   └── 组合 ForwardLoc、ForwardRemote、StunServer、WebrtcProxy、Vite 切片
+│   └── 组合 ForwardLoc、StunServer、WebrtcProxy、Vite 切片
 ├── ForwardLoc/
 │   ├── store.ts             # 本地端口转发切片
 │   └── index.ts             # SSH 端口转发生产者
 │       └── register()  创建并维护具体本地端口转发
-├── ForwardRemote/
-│   ├── store.ts             # 远端服务发布配置切片
-│   │   └── forwardRemote  保存产物路径、远端路径和 JWT secret
-│   └── index.ts             # 远端服务发布生产者
-│       └── isRunning(): Promise<void>  发布目标版本并验证 PM2 与健康接口
 ├── StunServer/
 │   ├── store.ts             # STUN 服务配置切片
 │   │   └── stunServer.port: number  Coturn 独占端口
@@ -32,11 +27,12 @@ ubuntu-lib/
 │       ├── readonly state  交付 host、port 和 secure
 │       └── isRunning(): Promise<typeof state>  保障 Coturn 并验证公网 STUN 响应
 ├── WebrtcProxy/
-│   ├── store.ts             # WebRTC 信令配置切片
-│   │   └── webrtcProxy  保存信令端口和路径
+│   ├── store.ts             # WebRTC 信令专属切片
+│   │   ├── webrtcProxy  仅保存外部产物路径、JWT secret、信令端口和路径
+│   │   └── webrtcProxyActions.register()  接收外部信令实现的路径和 JWT secret 报备
 │   └── index.ts             # WebRTC 信令生产者
 │       ├── readonly state  交付 host、port、path 和 secure
-│       └── isRunning(): Promise<typeof state>  发布并验证 HTTP、凭证和 WebSocket 信令
+│       └── isRunning(): Promise<void>  无参数发布并验证 HTTP、凭证和 WebSocket 信令
 ├── Vite/
 │   ├── store.ts             # Vite 数据切片
 │   │   └── vite.remoteRoot: string  交付 SFTP 上传和站点发布共同使用的远端根路径
@@ -70,6 +66,8 @@ ubuntu-lib/
     │   └── 调用 Public.sshIsRunning()、NodeSSH.execCommand()
     ├── pm2IsRunning(): Promise<void>  确保远程 Node 项目拥有持久 PM2 运行环境
     │   └── 调用 Public.execute()
+    ├── serviceIsRunning(): Promise<void>  原子发布专属生产者提交的单文件 Node 服务
+    │   └── 调用 Public.pm2IsRunning()、Public.execute()、Public.ssh.putFile()
     └── dispose(): void  关闭当前服务实例持有的 SSH 会话
         └── 调用 NodeSSH.dispose()
 ```
@@ -151,15 +149,28 @@ export default defineConfig({
 });
 ```
 
-分别启动并消费 WebRTC 信令与 STUN 数据：
+WebRTC 信令源码项目是生产者。它在自己的独立文件中直接消费主 store，向专属切片报备实现
+数据；构建完成时再从公开入口取得对应生产者，无参数提交：
+
+```ts
+import { resolve } from "node:path";
+import ubuntu from "ubuntu-lib/index.ts";
+import store from "ubuntu-lib/store.ts";
+
+store.getState().webrtcProxyActions.register({
+  path: resolve(import.meta.dirname, "dist/webrtcsignaling/index.js"),
+  jwtSecret: "webrtcsignaling-open-issuer",
+});
+
+await ubuntu.webrtcProxy.isRunning();
+```
+
+外部消费者不接触主 store、产物路径、JWT secret 或部署方法，只消费对应切片公开对象交付的
+`state`：
 
 ```ts
 import ubuntu from "ubuntu-lib/index.ts";
 
-await Promise.all([
-  ubuntu.webrtcProxy.isRunning(),
-  ubuntu.stunServer.isRunning(),
-]);
 const peerServer = ubuntu.webrtcProxy.state;
 const stunServer = ubuntu.stunServer.state;
 const signalingProtocol = peerServer.secure ? "wss" : "ws";
