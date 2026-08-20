@@ -9,10 +9,81 @@ type RemoteProcess = {
   environment?: Record<string, string>;
 };
 
+type Pm2ProcessState = {
+  id: number;
+  name: string;
+  pid: number;
+  status: string;
+  restarts: number;
+  startedAt?: string;
+  script?: string;
+  cwd?: string;
+};
+
+type Pm2JsonProcess = {
+  name?: unknown;
+  pid?: unknown;
+  pm_id?: unknown;
+  pm2_env?: {
+    status?: unknown;
+    restart_time?: unknown;
+    pm_uptime?: unknown;
+    pm_exec_path?: unknown;
+    pm_cwd?: unknown;
+  };
+};
+
 export default abstract class Pm2 {
   protected abstract readonly nodejs: Nodejs;
   protected abstract readonly ssh: Ssh;
   private remoteRunningPromise?: Promise<void>;
+
+  public readonly state: {
+    host: string;
+    status: "unknown" | "running";
+    processes: Pm2ProcessState[];
+    updatedAt?: string;
+  } = {
+    host: "",
+    status: "unknown",
+    processes: [],
+  };
+
+  public async isRunning(): Promise<typeof this.state> {
+    await this.isRemoteRunning();
+    return this.refresh();
+  }
+
+  public async refresh(): Promise<typeof this.state> {
+    const result = await this.ssh.execute("pm2 jlist");
+    const payload: unknown = JSON.parse(result.stdout);
+    if (!Array.isArray(payload)) throw new TypeError("PM2 jlist 未返回进程数组");
+    this.state.host = this.ssh.state.host;
+    this.state.status = "running";
+    this.state.processes = payload.map((value, index) => this.processParse(value, index));
+    this.state.updatedAt = new Date().toISOString();
+    return this.state;
+  }
+
+  public async stop(id: number): Promise<typeof this.state> {
+    this.idRequired(id);
+    await this.isRemoteRunning();
+    await this.ssh.execute(`pm2 stop ${String(id)} && pm2 save --force >/dev/null`);
+    return this.refresh();
+  }
+
+  public async restart(id: number): Promise<typeof this.state> {
+    this.idRequired(id);
+    await this.isRemoteRunning();
+    await this.ssh.execute(`pm2 restart ${String(id)} && pm2 save --force >/dev/null`);
+    return this.refresh();
+  }
+
+  public dispose(): void {
+    this.ssh.dispose();
+    this.remoteRunningPromise = undefined;
+    this.state.status = "unknown";
+  }
 
   public isRemoteRunning(): Promise<void> {
     if (this.remoteRunningPromise) return this.remoteRunningPromise;
@@ -97,6 +168,42 @@ pm2 --version >/dev/null
       throw new TypeError(`PM2 进程名称无效: ${name}`);
     }
     return name;
+  }
+
+  private idRequired(id: number): number {
+    if (!Number.isInteger(id) || id < 0) {
+      throw new TypeError(`PM2 id 无效: ${String(id)}`);
+    }
+    return id;
+  }
+
+  private processParse(value: unknown, index: number): Pm2ProcessState {
+    if (!value || typeof value !== "object") {
+      throw new TypeError(`PM2 进程 ${String(index)} 不是对象`);
+    }
+    const process = value as Pm2JsonProcess;
+    const environment = process.pm2_env;
+    if (
+      !Number.isInteger(process.pm_id)
+      || typeof process.name !== "string"
+      || typeof process.pid !== "number"
+      || !environment
+      || typeof environment.status !== "string"
+    ) {
+      throw new TypeError(`PM2 进程 ${String(index)} 缺少必要运行数据`);
+    }
+    return {
+      id: process.pm_id as number,
+      name: process.name,
+      pid: process.pid,
+      status: environment.status,
+      restarts: typeof environment.restart_time === "number" ? environment.restart_time : 0,
+      startedAt: typeof environment.pm_uptime === "number"
+        ? new Date(environment.pm_uptime).toISOString()
+        : undefined,
+      script: typeof environment.pm_exec_path === "string" ? environment.pm_exec_path : undefined,
+      cwd: typeof environment.pm_cwd === "string" ? environment.pm_cwd : undefined,
+    };
   }
 
   private portRequired(port: number): number {

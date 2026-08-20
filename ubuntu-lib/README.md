@@ -11,7 +11,7 @@ ubuntu-lib/
 │   ├── sftp: Sftp  交付本地与远端之间的双向文件传输
 │   ├── stunServer: StunServer  交付 STUN 数据并保障 Coturn
 │   ├── webrtcsignaling: Webrtcsignaling  交付并保障 WebRTC 信令
-│   ├── vite: Vite  交付开发隧道与构建发布能力
+│   ├── vite: Vite  组合 Vite 能力对象并注入 Forward、Nginx、Nodejs、Pm2、Sftp
 │   └── pm2: Pm2  交付并维护远程 PM2 进程数据
 ├── store.ts                 # 内部主仓库，只组合根配置和独立切片
 │   ├── ssh  SSH 连接所需的外部固定数据
@@ -47,16 +47,12 @@ ubuntu-lib/
 │       ├── isRemoteRunning(): Promise<void>  无参数发布并验证 HTTP、凭证和 WebSocket 信令
 │       └── vitePlugin({ entry, jwtSecret }): Plugin  只接收外部实现不可推导的源码事实
 ├── Vite/
-│   └── index.ts             # Vite 公网开发与发布消费场景
-│       ├── honoReact(): Plugin  开发时建立隧道，构建时发布 Hono 与全部 React 产物
-│       │   └── 调用 store.mainDomain、store.remoteRoot、Public.sshIsRunning()、
-│       │       Public.sftp.remoteUpload()、Public.execute()、Public.pm2IsRunning()
-│       ├── react(): Plugin  开发时建立隧道，构建时由 Nginx 直接发布 React 产物
-│       │   └── 调用 store.mainDomain、store.remoteRoot、Public.sshIsRunning()、
-│       │       Public.sftp.remoteUpload()、Public.execute()
-│       └── electronRenderer(): Plugin  为两种 Electron Renderer 场景建立开发隧道
-│           └── 调用 store.mainDomain、store.remoteRoot、Public.sshIsRunning()、
-│               Public.ssh.forwardIn()、Public.execute()
+│   └── index.ts             # 与其他生产者对等的 Vite 抽象业务对象
+│       ├── state(port)  交付端口对应的公网 HTTPS 地址
+│       ├── dev.forward(): Plugin  监听开发服务器、建立 SSH 转发并在关闭时恢复生产路由
+│       └── pro
+│           ├── sftp(): Plugin  构建结束后通过 SFTP 发布静态产物并接入 Nginx
+│           └── nodejs(): Plugin  构建结束后发布 Node.js 服务并维护 PM2 与 Nginx
 ├── Pm2.ts                  # Ubuntu PM2 运行时数据生产者
 │   ├── readonly state  交付服务器地址、daemon 状态、更新时间与完整进程列表
 │   ├── isRunning(): Promise<typeof state>  确保 PM2 可用并刷新完整进程数据
@@ -102,7 +98,8 @@ export default defineConfig({
       },
       ["../reactapp"],
     ),
-    ubuntu.vite.honoReact(),
+    ubuntu.vite.dev.forward(),
+    ubuntu.vite.pro.nodejs(),
   ],
 });
 ```
@@ -116,7 +113,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   server: { port: 5174 },
-  plugins: [react(), ubuntu.vite.react()],
+  plugins: [react(), ubuntu.vite.dev.forward(), ubuntu.vite.pro.sftp()],
 });
 ```
 
@@ -131,7 +128,7 @@ export default defineConfig({
   renderer: {
     plugins: [
       rendererReact({ otherPort: 8887 }, ["."]),
-      ubuntu.vite.electronRenderer(),
+      ubuntu.vite.dev.forward(),
     ],
   },
 });
@@ -156,7 +153,7 @@ export default defineConfig({
     plugins: [honoReact.main],
   },
   renderer: {
-    plugins: [react(), honoReact.renderer, ubuntu.vite.electronRenderer()],
+    plugins: [react(), honoReact.renderer, ubuntu.vite.dev.forward()],
   },
 });
 ```

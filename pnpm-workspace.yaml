@@ -1,5 +1,4 @@
 packages:
-  - "src-lib"
   - "ubuntu-lib"
-  - "../extends-zustand"
-  - "../remote-runtimeobj/webrtcsignaling"
+  - "../extends-mcp/libs/mcpserver"
+  - "../extends-zustand/libs/zustand-lib"

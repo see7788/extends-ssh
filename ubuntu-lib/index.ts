@@ -129,7 +129,7 @@ class Ubuntu {
   public readonly peerjs = new PeerjsRuntime(this.docker, this.nginx, this.ssh);
   /** 交付 STUN 连接数据并确保 Coturn 服务可用。 */
   public readonly stunServer = new StunServerRuntime(this.docker, this.ssh);
-  /** 让 Vite 配置消费开发隧道和构建发布场景。 */
+  /** 让 Vite 配置按开发转发、生产静态交付和生产 Node.js 交付组合能力。 */
   public readonly vite = new ViteRuntime(
     this.forward,
     this.nginx,
