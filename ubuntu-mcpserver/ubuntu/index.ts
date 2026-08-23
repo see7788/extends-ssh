@@ -10,7 +10,7 @@ import {
 
 const readAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const mutationAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true } as const;
-export default mcpserver.register.slice({ sliceName: "ubuntu" })
+export default mcpserver.register.slice({ registerName: "ubuntu" })
   .resource.register("get", "/readme", blackboxUri, {
     title: "Ubuntu Vite black-box contract",
     description: "Ubuntu Vite 公开组合接口的项目级黑盒说明。",

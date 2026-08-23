@@ -21,7 +21,7 @@ const emptyValidator = z.object({}).strict();
 const read = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const mutate = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true } as const;
 
-export default mcpserver.register.slice({ sliceName: "ubuntuRemote" })
+export default mcpserver.register.slice({ registerName: "ubuntuRemote" })
   .tool.register("post", "/config/public", emptyValidator, "Read public domain and remote root from ubuntu-lib store.", read, context => context.json(store.getState().ubuntuRemoteActions.publicConfig()))
   .tool.register("post", "/config/ssh", emptyValidator, "Read SSH host configuration without returning the password.", read, context => context.json(store.getState().ubuntuRemoteActions.sshConfig()))
   .tool.register("post", "/config/peerjs", emptyValidator, "Read PeerJS configuration from ubuntu-lib store.", read, context => context.json(store.getState().ubuntuRemoteActions.peerjsConfig()))
