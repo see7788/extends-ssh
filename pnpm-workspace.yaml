@@ -1,4 +1,6 @@
 packages:
   - "ubuntu-lib"
+  - "ubuntu-mcpserver"
   - "../extends-mcp/libs/mcpserver"
+  - "../extends-mcp/libs/user-response-templates-mcpserver"
   - "../extends-zustand/libs/zustand-lib"
