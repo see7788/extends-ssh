@@ -1,13 +1,27 @@
 import type Nodejs from "../Nodejs/index.ts";
 import type Ssh from "../Ssh/index.ts";
+import { z } from "zod";
 
-type RemoteProcess = {
-  name: string;
-  path: string;
-  command: string;
-  port: number;
-  environment?: Record<string, string>;
-};
+export const idValidator = z.object({
+  id: z.number().int().min(0),
+}).strict();
+export const processIsRemoteRunningValidator = z.object({
+  name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
+  path: z.string().trim().min(1),
+  command: z.string().trim().min(1),
+  port: z.number().int().min(1).max(65_535),
+  environment: z.record(
+    z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+    z.string(),
+  ).optional(),
+}).strict();
+export const processRemoteCloseValidator = z.object({
+  name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
+}).strict();
+
+type IdInput = z.infer<typeof idValidator>;
+type RemoteProcess = z.infer<typeof processIsRemoteRunningValidator>;
+type ProcessRemoteClose = z.infer<typeof processRemoteCloseValidator>;
 
 type Pm2ProcessState = {
   id: number;
@@ -65,17 +79,17 @@ export default abstract class Pm2 {
     return this.state;
   }
 
-  public async stop(id: number): Promise<typeof this.state> {
-    this.idRequired(id);
+  public async stop(id: IdInput["id"]): Promise<typeof this.state> {
+    const input = idValidator.parse({ id });
     await this.isRemoteRunning();
-    await this.ssh.execute(`pm2 stop ${String(id)} && pm2 save --force >/dev/null`);
+    await this.ssh.execute(`pm2 stop ${String(input.id)} && pm2 save --force >/dev/null`);
     return this.refresh();
   }
 
-  public async restart(id: number): Promise<typeof this.state> {
-    this.idRequired(id);
+  public async restart(id: IdInput["id"]): Promise<typeof this.state> {
+    const input = idValidator.parse({ id });
     await this.isRemoteRunning();
-    await this.ssh.execute(`pm2 restart ${String(id)} && pm2 save --force >/dev/null`);
+    await this.ssh.execute(`pm2 restart ${String(input.id)} && pm2 save --force >/dev/null`);
     return this.refresh();
   }
 
@@ -98,20 +112,19 @@ export default abstract class Pm2 {
 
   /** 启动远端 PM2 进程，并确认该进程树监听指定端口。 */
   public async processIsRemoteRunning(process: RemoteProcess): Promise<void> {
+    const input = processIsRemoteRunningValidator.parse(process);
     await this.isRemoteRunning();
-    const name = this.nameRequired(process.name);
-    const port = this.portRequired(process.port);
-    const environment = Object.entries(process.environment ?? {})
-      .map(([key, value]) => `${this.environmentNameRequired(key)}=${this.shell(value)}`)
+    const environment = Object.entries(input.environment ?? {})
+      .map(([key, value]) => `${key}=${this.shell(value)}`)
       .join(" ");
     await this.ssh.execute(`
 set -e
-pm2 delete ${this.shell(name)} >/dev/null 2>&1 || true
-cd ${this.shell(process.path)}
-${environment} pm2 start bash --name ${this.shell(name)} -- -lc ${this.shell(process.command)}
+pm2 delete ${this.shell(input.name)} >/dev/null 2>&1 || true
+cd ${this.shell(input.path)}
+${environment} pm2 start bash --name ${this.shell(input.name)} -- -lc ${this.shell(input.command)}
 pm2 save --force >/dev/null
 for attempt in $(seq 1 20); do
-  ROOT_PID=$(pm2 pid ${this.shell(name)})
+  ROOT_PID=$(pm2 pid ${this.shell(input.name)})
   if [ -n "$ROOT_PID" ] && [ "$ROOT_PID" != 0 ]; then
     PIDS="$ROOT_PID"
     CURRENT="$ROOT_PID"
@@ -122,23 +135,24 @@ for attempt in $(seq 1 20); do
       CURRENT="$CHILDREN"
     done
     for PID in $PIDS; do
-      if lsof -Pan -p "$PID" -iTCP:${port} -sTCP:LISTEN >/dev/null 2>&1; then exit 0; fi
+      if lsof -Pan -p "$PID" -iTCP:${input.port} -sTCP:LISTEN >/dev/null 2>&1; then exit 0; fi
     done
   fi
   sleep 0.5
 done
-pm2 logs ${this.shell(name)} --lines 40 --nostream >&2 || true
-echo ${this.shell(`PM2 进程未监听端口 ${port}: ${name}`)} >&2
+pm2 logs ${this.shell(input.name)} --lines 40 --nostream >&2 || true
+echo ${this.shell(`PM2 进程未监听端口 ${input.port}: ${input.name}`)} >&2
 exit 1
 `);
   }
 
   /** 停止远端 PM2 进程。 */
-  public async processRemoteClose(name: string): Promise<void> {
+  public async processRemoteClose(name: ProcessRemoteClose["name"]): Promise<void> {
+    const input = processRemoteCloseValidator.parse({ name });
     await this.ssh.isRunning();
     await this.ssh.execute(`
 if command -v pm2 >/dev/null 2>&1; then
-  pm2 delete ${this.shell(this.nameRequired(name))} >/dev/null 2>&1 || true
+  pm2 delete ${this.shell(input.name)} >/dev/null 2>&1 || true
   pm2 save --force >/dev/null 2>&1 || true
 fi
 `);
@@ -161,20 +175,6 @@ systemctl enable pm2-root >/dev/null
 systemctl is-enabled --quiet pm2-root
 pm2 --version >/dev/null
 `);
-  }
-
-  private nameRequired(name: string): string {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) {
-      throw new TypeError(`PM2 进程名称无效: ${name}`);
-    }
-    return name;
-  }
-
-  private idRequired(id: number): number {
-    if (!Number.isInteger(id) || id < 0) {
-      throw new TypeError(`PM2 id 无效: ${String(id)}`);
-    }
-    return id;
   }
 
   private processParse(value: unknown, index: number): Pm2ProcessState {
@@ -204,20 +204,6 @@ pm2 --version >/dev/null
       script: typeof environment.pm_exec_path === "string" ? environment.pm_exec_path : undefined,
       cwd: typeof environment.pm_cwd === "string" ? environment.pm_cwd : undefined,
     };
-  }
-
-  private portRequired(port: number): number {
-    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-      throw new TypeError(`PM2 进程端口无效: ${String(port)}`);
-    }
-    return port;
-  }
-
-  private environmentNameRequired(name: string): string {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-      throw new TypeError(`PM2 环境变量名称无效: ${name}`);
-    }
-    return name;
   }
 
   private shell(value: string): string {

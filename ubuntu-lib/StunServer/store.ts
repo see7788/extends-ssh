@@ -1,12 +1,15 @@
 import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
+import { z } from "zod";
 
-type StunServerStore = {
-  stunServer: {
-    port: number;
-  };
-};
+export const stunServerValidator = z.object({
+  stunServer: z.object({
+    port: z.number().int().min(1).max(65_535),
+  }).strict(),
+}).strict();
 
-const stunServerStore: ImmerStateCreator<StunServerStore> = () => ({
+type StunServerStore = z.infer<typeof stunServerValidator>;
+
+const stunServerStore: ImmerStateCreator<StunServerStore> = () => stunServerValidator.parse({
   stunServer: {
     port: 3478,
   },

@@ -1,9 +1,12 @@
-import mcpserver from "mcpserver";
-import ubuntu from "./ubuntu/index";
-import ubuntuRemote from "./ubuntuRemote/index";
-
-export default mcpserver.importer.package({
-  packageName: "ubuntu-mcpserver",
-  description: "为 Ubuntu 项目提供项目检查、依赖维护、远程部署与服务管理工具。",
-  registers: [ubuntu, ubuntuRemote],
-});
+export { default as apt } from "./apt/index.ts";
+export { default as docker } from "./docker/index.ts";
+export { default as nginx } from "./nginx/index.ts";
+export { default as nodejs } from "./nodejs/index.ts";
+export { default as peerjs } from "./peerjs/index.ts";
+export { default as pm2 } from "./pm2/index.ts";
+export { default as public } from "./public/index.ts";
+export { default as sftp } from "./sftp/index.ts";
+export { default as ssh } from "./ssh/index.ts";
+export { default as stunServer } from "./stunServer/index.ts";
+export { default as vite } from "./vite/index.ts";
+export { default as webrtcsignaling } from "./webrtcsignaling/index.ts";

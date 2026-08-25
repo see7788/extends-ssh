@@ -4,6 +4,23 @@ import path from "node:path";
 import { init, parse } from "es-module-lexer";
 import type Apt from "../Apt/index.ts";
 import type Ssh from "../Ssh/index.ts";
+import { z } from "zod";
+
+const localPathValidator = z.string().trim().min(1).refine(path.isAbsolute, {
+  message: "本地路径必须是绝对路径",
+});
+const remotePathValidator = z.string().trim().min(1);
+
+export const deploymentPackageCreateValidator = z.object({
+  buildPath: localPathValidator,
+  projectPath: localPathValidator,
+}).strict();
+export const dependenciesRemoteInstallValidator = z.object({
+  projectPath: remotePathValidator,
+}).strict();
+
+type DeploymentPackageCreate = z.infer<typeof deploymentPackageCreateValidator>;
+type DependenciesRemoteInstall = z.infer<typeof dependenciesRemoteInstallValidator>;
 
 export default abstract class Nodejs {
   protected abstract readonly apt: Apt;
@@ -28,10 +45,11 @@ export default abstract class Nodejs {
 
   /** 根据 Node 构建产物生成远端安装使用的 package.json。 */
   public async deploymentPackageCreate(
-    buildPath: string,
-    projectPath: string,
+    buildPath: DeploymentPackageCreate["buildPath"],
+    projectPath: DeploymentPackageCreate["projectPath"],
   ): Promise<{ content: string; name: string }> {
-    const packagePath = path.resolve(projectPath, "package.json");
+    const input = deploymentPackageCreateValidator.parse({ buildPath, projectPath });
+    const packagePath = path.resolve(input.projectPath, "package.json");
     if (!existsSync(packagePath)) throw new Error(`Node 项目 package.json 不存在: ${packagePath}`);
     const sourcePackage = JSON.parse(await fs.promises.readFile(packagePath, "utf8")) as {
       name?: string;
@@ -46,7 +64,7 @@ export default abstract class Nodejs {
     const dependencies: Record<string, string> = {};
     const require = createRequire(packagePath);
     const packageResolve = (name: string): string | undefined => {
-      let searchPath = projectPath;
+      let searchPath = input.projectPath;
       while (true) {
         const candidate = path.join(searchPath, "node_modules", name, "package.json");
         if (existsSync(candidate)) return candidate;
@@ -70,9 +88,9 @@ export default abstract class Nodejs {
     };
     const externalPackages = new Set<string>();
     await init;
-    const files = await fs.promises.readdir(buildPath, { recursive: true });
+    const files = await fs.promises.readdir(input.buildPath, { recursive: true });
     for (const file of files.filter(value => /\.[cm]?js$/.test(value))) {
-      const source = await fs.promises.readFile(path.resolve(buildPath, file), "utf8");
+      const source = await fs.promises.readFile(path.resolve(input.buildPath, file), "utf8");
       for (const importEntry of parse(source)[0]) {
         const specifier = importEntry.n;
         if (
@@ -121,11 +139,14 @@ export default abstract class Nodejs {
   }
 
   /** 在远端 Node 项目中安装生产依赖。 */
-  public async dependenciesRemoteInstall(projectPath: string): Promise<void> {
+  public async dependenciesRemoteInstall(
+    projectPath: DependenciesRemoteInstall["projectPath"],
+  ): Promise<void> {
+    const input = dependenciesRemoteInstallValidator.parse({ projectPath });
     await this.isRemoteRunning();
     await this.ssh.execute(`
 set -e
-cd ${this.shell(projectPath)}
+cd ${this.shell(input.projectPath)}
 npm install --omit=dev --no-package-lock
 `);
   }

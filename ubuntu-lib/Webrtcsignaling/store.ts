@@ -1,39 +1,45 @@
 import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 import { isAbsolute } from "node:path";
+import { z } from "zod";
 
-type WebrtcsignalingStore = {
-  webrtcsignaling: {
-    entry: string;
-    path: string;
-    listenPort: 9001;
-    pathname: "/signal";
-  };
+const webrtcsignalingStateValidator = z.object({
+  webrtcsignaling: z.object({
+    entry: z.union([
+      z.literal(""),
+      z.string().regex(/^(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._~\/-]+\.tsx?$/),
+    ]),
+    path: z.union([
+      z.literal(""),
+      z.string().trim().min(1).refine(isAbsolute, { message: "path 必须是绝对路径" }),
+    ]),
+    listenPort: z.literal(9001),
+    pathname: z.literal("/signal"),
+  }).strict(),
+}).strict();
+const webrtcsignalingRegisterValidator = z.object({
+  entry: z.string().regex(/^(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._~\/-]+\.tsx?$/),
+  path: z.string().trim().min(1).refine(isAbsolute, { message: "path 必须是绝对路径" }),
+}).strict();
+
+type WebrtcsignalingState = z.infer<typeof webrtcsignalingStateValidator>;
+type WebrtcsignalingRegister = z.infer<typeof webrtcsignalingRegisterValidator>;
+type WebrtcsignalingStore = WebrtcsignalingState & {
   webrtcsignalingActions: {
-    register(registration: { entry: string; path: string }): void;
+    register(registration: WebrtcsignalingRegister): void;
   };
 };
 
 const webrtcsignalingStore: ImmerStateCreator<WebrtcsignalingStore> = set => ({
-  webrtcsignaling: {
-    entry: "",
-    path: "",
-    listenPort: 9001,
-    pathname: "/signal",
-  },
+  ...webrtcsignalingStateValidator.parse({
+    webrtcsignaling: { entry: "", path: "", listenPort: 9001, pathname: "/signal" },
+  }),
   webrtcsignalingActions: {
     register(registration) {
-      if (!isAbsolute(registration.path)) {
-        throw new TypeError(`WebRTC 信令源码目录必须是绝对路径: ${registration.path}`);
-      }
-      if (
-        !/^(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._~/-]+\.tsx?$/.test(registration.entry)
-      ) {
-        throw new TypeError(`WebRTC 信令 TypeScript 入口无效: ${registration.entry}`);
-      }
+      const input = webrtcsignalingRegisterValidator.parse(registration);
       set(state => {
         state.webrtcsignaling = {
-          entry: registration.entry,
-          path: registration.path,
+          entry: input.entry,
+          path: input.path,
           listenPort: state.webrtcsignaling.listenPort,
           pathname: state.webrtcsignaling.pathname,
         };

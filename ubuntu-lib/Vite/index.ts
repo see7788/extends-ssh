@@ -1,12 +1,185 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Plugin, ResolvedConfig } from "vite";
+import { z } from "zod";
 import type Forward from "../Forward/index.ts";
 import type Nginx from "../Nginx/index.ts";
 import type Nodejs from "../Nodejs/index.ts";
 import type Pm2 from "../Pm2/index.ts";
 import type Sftp from "../Sftp/index.ts";
-import store from "../store.ts";
+import store from "../store/index.ts";
+
+const projectPathValidator = z.string().trim().min(1).refine(path.isAbsolute, {
+  message: "projectPath 必须是绝对路径",
+});
+const projectReadValidator = z.object({
+  projectPath: projectPathValidator,
+}).strict();
+const dependenciesInstallValidator = projectReadValidator;
+const importsEnsureValidator = z.object({
+  projectPath: projectPathValidator,
+  sourceFilePath: z.string().trim().min(1).refine(path.isAbsolute, {
+    message: "sourceFilePath 必须是绝对路径",
+  }),
+}).strict();
+const stateValidator = z.object({
+  port: z.number().int().min(1).max(65535),
+}).strict();
+
+const dependencyMapValidator = z.record(z.string(), z.string());
+const projectPackageValidator = z.object({
+  name: z.string().trim().min(1),
+  tpltype: z.enum([
+    "node-application",
+    "hono-application",
+    "electron-vite-application",
+  ]).optional(),
+  dependencies: dependencyMapValidator.optional(),
+  devDependencies: dependencyMapValidator.optional(),
+  optionalDependencies: dependencyMapValidator.optional(),
+  peerDependencies: dependencyMapValidator.optional(),
+  workspaces: z.unknown().optional(),
+}).passthrough();
+
+type ProjectReadInput = z.infer<typeof projectReadValidator>;
+type DependenciesInstallInput = z.infer<typeof dependenciesInstallValidator>;
+type ImportsEnsureInput = z.infer<typeof importsEnsureValidator>;
+type StateInput = z.infer<typeof stateValidator>;
+
+const projectProfiles = ["node", "hono", "electron-vite"] as const;
+type ProjectProfile = typeof projectProfiles[number];
+
+const dependencyPatch = {
+  devDependencies: {
+    "ubuntu-lib": "workspace:*",
+    vite: "^8.0.11",
+  },
+} as const;
+const ubuntuImport = 'import ubuntu from "ubuntu-lib/index.ts";';
+const applicableExpressions = {
+  node: ["ubuntu.vite.pro.nodejs()"],
+  hono: ["ubuntu.vite.dev.forward()", "ubuntu.vite.pro.nodejs()"],
+  "electron-vite": ["ubuntu.vite.dev.forward()"],
+} as const satisfies Record<ProjectProfile, readonly string[]>;
+const readmeUri: string = new URL("../README.md", import.meta.url).href;
+const readmePath = fileURLToPath(readmeUri);
+
+const missingPath = (error: unknown): boolean =>
+  typeof error === "object"
+  && error !== null
+  && "code" in error
+  && (
+    (error as { code?: unknown }).code === "ENOENT"
+    || (error as { code?: unknown }).code === "ENOTDIR"
+  );
+
+const existingFile = async (value: string): Promise<boolean> => {
+  try {
+    return (await stat(value)).isFile();
+  } catch (error) {
+    if (missingPath(error)) return false;
+    throw error;
+  }
+};
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const pnpmInstall = async (projectPath: string): Promise<void> =>
+  new Promise((resolvePromise, rejectPromise) => {
+    const executable = process.platform === "win32"
+      ? (process.env.ComSpec ?? "cmd.exe")
+      : "pnpm";
+    const args = process.platform === "win32"
+      ? ["/d", "/s", "/c", "pnpm", "install"]
+      : ["install"];
+    execFile(
+      executable,
+      args,
+      {
+        cwd: projectPath,
+        encoding: "utf8",
+        maxBuffer: 5 * 1024 * 1024,
+        timeout: 120_000,
+        windowsHide: true,
+      },
+      error => {
+        if (error) {
+          rejectPromise(new Error(`pnpm install 失败：${error.message}`));
+          return;
+        }
+        resolvePromise();
+      },
+    );
+  });
+
+const sourceInsideProject = (projectPath: string, sourceFilePath: string): boolean => {
+  const value = path.relative(projectPath, sourceFilePath);
+  return value.length > 0
+    && value !== ".."
+    && !value.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(value);
+};
+
+const importEnsure = async (sourceFilePath: string): Promise<boolean> => {
+  const original = await readFile(sourceFilePath, "utf8");
+  if (original.includes(ubuntuImport)) return false;
+  const bom = original.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const source = bom ? original.slice(1) : original;
+  const newline = source.includes("\r\n") ? "\r\n" : "\n";
+  const shebangEnd = source.startsWith("#!") ? source.indexOf("\n") + 1 : 0;
+  await writeFile(
+    sourceFilePath,
+    `${bom}${source.slice(0, shebangEnd)}${ubuntuImport}${newline}${source.slice(shebangEnd)}`,
+    "utf8",
+  );
+  return true;
+};
+
+const canonicalProjectPath = async (projectPath: string): Promise<string> => {
+  let canonicalPath: string;
+  try {
+    canonicalPath = await realpath(projectPath);
+  } catch (error) {
+    if (missingPath(error)) throw new Error(`projectPath 不存在：${projectPath}`);
+    throw error;
+  }
+  if (!(await stat(canonicalPath)).isDirectory()) {
+    throw new Error(`projectPath 必须指向目录：${canonicalPath}`);
+  }
+  return canonicalPath;
+};
+
+const projectProfileDetect = (
+  tpltype: z.infer<typeof projectPackageValidator>["tpltype"],
+  dependencyNames: ReadonlySet<string>,
+  viteConfigExists: boolean,
+  electronViteConfigExists: boolean,
+): ProjectProfile => {
+  if (tpltype === "electron-vite-application") {
+    if (!electronViteConfigExists || viteConfigExists) {
+      throw new Error("electron-vite-application 只能使用 electron.vite.config.ts");
+    }
+    if (!dependencyNames.has("electron-vite")) {
+      throw new Error("使用 electron.vite.config.ts 的项目必须声明 electron-vite 依赖");
+    }
+    return "electron-vite";
+  }
+  if (!viteConfigExists || electronViteConfigExists) {
+    throw new Error(`${String(tpltype)} 只能使用 vite.config.ts`);
+  }
+  if (tpltype === "hono-application") {
+    if (!dependencyNames.has("hono")) {
+      throw new Error("hono-application 必须声明 hono 依赖");
+    }
+    return "hono";
+  }
+  if (tpltype === "node-application") return "node";
+  throw new Error(`Ubuntu Vite 工具不支持该 tpltype：${String(tpltype)}`);
+};
 
 type RegisteredForward = ReturnType<Forward["register"]>;
 export default abstract class Vite {
@@ -79,8 +252,171 @@ export default abstract class Vite {
     throw lastFailure;
   }
 
-  public state(port: number) {
-    const target = this.targetResolve(port);
+  public async readme(uri?: string) {
+    return {
+      contents: [{
+        uri: uri ?? readmeUri,
+        mimeType: "text/markdown",
+        text: await readFile(readmePath, "utf8"),
+      }],
+    };
+  }
+
+  public async projectRead(input: ProjectReadInput) {
+    const value = projectReadValidator.parse(input);
+    const canonicalPath = await canonicalProjectPath(value.projectPath);
+    const packagePath = path.join(canonicalPath, "package.json");
+    const viteConfigPath = path.join(canonicalPath, "vite.config.ts");
+    const electronViteConfigPath = path.join(canonicalPath, "electron.vite.config.ts");
+    const [
+      packageExists,
+      viteConfigExists,
+      electronViteConfigExists,
+      pnpmWorkspaceExists,
+      pnpmWorkspaceYmlExists,
+    ] = await Promise.all([
+      existingFile(packagePath),
+      existingFile(viteConfigPath),
+      existingFile(electronViteConfigPath),
+      existingFile(path.join(canonicalPath, "pnpm-workspace.yaml")),
+      existingFile(path.join(canonicalPath, "pnpm-workspace.yml")),
+    ]);
+    if (!packageExists) {
+      throw new Error(`具体包缺少 package.json：${canonicalPath}`);
+    }
+
+    let packageJson: z.infer<typeof projectPackageValidator>;
+    try {
+      packageJson = projectPackageValidator.parse(
+        JSON.parse(await readFile(packagePath, "utf8")),
+      );
+    } catch (error) {
+      throw new Error(`具体包的 package.json 无效：${packagePath}`, { cause: error });
+    }
+    if (packageJson.name.startsWith("extends-") || packageJson.name.endsWith("-lib")) {
+      throw new Error(`Ubuntu Vite 工具只适用于 application 包：${packageJson.name}`);
+    }
+    if (
+      packageJson.workspaces !== undefined
+      || pnpmWorkspaceExists
+      || pnpmWorkspaceYmlExists
+    ) {
+      throw new Error(`workspace 根不是具体包：${canonicalPath}`);
+    }
+
+    const dependencyNames = new Set<string>();
+    for (const dependencies of [
+      packageJson.dependencies,
+      packageJson.devDependencies,
+      packageJson.optionalDependencies,
+      packageJson.peerDependencies,
+    ]) {
+      for (const name of Object.keys(dependencies ?? {})) dependencyNames.add(name);
+    }
+    if (!dependencyNames.has("ubuntu-lib")) {
+      throw new Error(`具体包必须声明 ubuntu-lib：${packagePath}`);
+    }
+
+    const profile = projectProfileDetect(
+      packageJson.tpltype,
+      dependencyNames,
+      viteConfigExists,
+      electronViteConfigExists,
+    );
+    const configPath = profile === "electron-vite"
+      ? electronViteConfigPath
+      : viteConfigPath;
+    return {
+      project: { name: packageJson.name, path: canonicalPath, profile },
+      config: { path: configPath, uri: pathToFileURL(configPath).href },
+      blackbox: {
+        resourceName: "vite.readme",
+        path: readmePath,
+        uri: readmeUri,
+        instruction: "在组合下方公开表达式之前，必须先读取 vite.readme MCP 资源。",
+      },
+      usage: {
+        importPath: "ubuntu-lib/index.ts",
+        importStatement: ubuntuImport,
+        expressions: applicableExpressions[profile],
+      },
+      constraints: [
+        "server.port 必须是 1 到 65535 之间的固定整数，不得动态计算。",
+      ],
+    };
+  }
+
+  public async dependenciesInstall(input: DependenciesInstallInput) {
+    try {
+      const value = dependenciesInstallValidator.parse(input);
+      const projectPath = await canonicalProjectPath(value.projectPath);
+      if (await existingFile(path.join(projectPath, "pnpm-workspace.yaml"))) {
+        throw new Error(`projectPath 必须指向具体包，不能指向 pnpm workspace 根：${projectPath}`);
+      }
+      const packageJsonPath = path.join(projectPath, "package.json");
+      if (!(await existingFile(packageJsonPath))) {
+        throw new Error(`项目缺少 package.json：${packageJsonPath}`);
+      }
+      const packageJson = projectPackageValidator.parse(
+        JSON.parse(await readFile(packageJsonPath, "utf8")),
+      );
+      const next = {
+        ...packageJson,
+        devDependencies: {
+          ...(packageJson.devDependencies ?? {}),
+          ...dependencyPatch.devDependencies,
+        },
+      };
+      const changed = JSON.stringify(next) !== JSON.stringify(packageJson);
+      if (changed) {
+        await writeFile(packageJsonPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+      }
+      await pnpmInstall(projectPath);
+      return {
+        body: {
+          changed,
+          installed: dependencyPatch,
+          packageJsonPath,
+          projectPath,
+        },
+      };
+    } catch (error) {
+      return { body: { error: errorMessage(error) }, status: 400 as const };
+    }
+  }
+
+  public async importsEnsure(input: ImportsEnsureInput) {
+    try {
+      const value = importsEnsureValidator.parse(input);
+      const projectPath = await canonicalProjectPath(value.projectPath);
+      const sourceFilePath = await realpath(path.resolve(value.sourceFilePath));
+      if (!sourceInsideProject(projectPath, sourceFilePath)) {
+        throw new Error(`sourceFilePath 必须位于 projectPath 内部：${sourceFilePath}`);
+      }
+      if (
+        !(await stat(sourceFilePath)).isFile()
+        || path.extname(sourceFilePath).toLowerCase() !== ".ts"
+      ) {
+        throw new Error(`sourceFilePath 必须指向已经存在的 .ts 文件：${sourceFilePath}`);
+      }
+      if (sourceFilePath.toLowerCase().endsWith(".d.ts")) {
+        throw new Error(`不支持修改声明文件：${sourceFilePath}`);
+      }
+      return {
+        body: {
+          added: await importEnsure(sourceFilePath) ? [ubuntuImport] : [],
+          projectPath,
+          sourceFilePath,
+        },
+      };
+    } catch (error) {
+      return { body: { error: errorMessage(error) }, status: 400 as const };
+    }
+  }
+
+  public state(port: StateInput["port"]) {
+    const input = stateValidator.parse({ port });
+    const target = this.targetResolve(input.port);
     return { host: target.hostname, port: 443 as const, secure: true as const };
   }
 
@@ -334,3 +670,10 @@ export default abstract class Vite {
     },
   };
 }
+export {
+  dependenciesInstallValidator,
+  importsEnsureValidator,
+  projectReadValidator,
+  readmeUri,
+  stateValidator,
+};

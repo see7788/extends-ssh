@@ -1,2 +1,8 @@
 node_modules/
 .*/
+.pnpm-store/**
+**/node_modules/**
+**/dist/**
+**/**_bak/
+**/**.bak
+.dist/**

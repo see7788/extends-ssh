@@ -1,5 +1,12 @@
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
-import store from "../store.ts";
+import { z } from "zod";
+import store from "../store/index.ts";
+
+export const sshExecuteValidator = z.object({
+  command: z.string().trim().min(1),
+}).strict();
+
+type SshExecute = z.infer<typeof sshExecuteValidator>;
 
 export default class Ssh {
   public readonly client = new NodeSSH();
@@ -39,9 +46,10 @@ export default class Ssh {
     this.connection.revision += 1;
   }
 
-  public async execute(command: string): Promise<SSHExecCommandResponse> {
+  public async execute(command: SshExecute["command"]): Promise<SSHExecCommandResponse> {
+    const input = sshExecuteValidator.parse({ command });
     await this.isRunning();
-    const execution = await this.client.execCommand(command);
+    const execution = await this.client.execCommand(input.command);
     if (execution.code !== 0) {
       throw new Error(
         `远程命令失败 (${String(execution.code)})\n${execution.stderr || execution.stdout}`,

@@ -10,7 +10,7 @@ import Ssh from "./Ssh/index.ts";
 import StunServer from "./StunServer/index.ts";
 import Vite from "./Vite/index.ts";
 import Webrtcsignaling from "./Webrtcsignaling/index.ts";
-import store from "./store.ts";
+import store from "./store/index.ts";
 
 class AptRuntime extends Apt {
   constructor(protected readonly ssh: Ssh) {

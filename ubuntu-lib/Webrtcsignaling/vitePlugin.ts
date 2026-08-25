@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createConnection } from "node:net";
 import { relative, resolve } from "node:path";
-import store from "../store.ts";
+import store from "../store/index.ts";
 
 type Runtime = {
   readonly state: {

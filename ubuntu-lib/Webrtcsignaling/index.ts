@@ -15,7 +15,7 @@ import type Nginx from "../Nginx/index.ts";
 import type Pm2 from "../Pm2/index.ts";
 import type Sftp from "../Sftp/index.ts";
 import type Ssh from "../Ssh/index.ts";
-import store from "../store.ts";
+import store from "../store/index.ts";
 import vitePlugin from "./vitePlugin.ts";
 
 export default abstract class Webrtcsignaling {

@@ -5,33 +5,23 @@
   "tpltype": "mcpserver-library",
   "type": "module",
   "exports": {
-    "./*": "./*.ts",
-    "./ubuntu": "./ubuntu/index.ts",
-    "./ubuntu/*": "./ubuntu/*.ts",
-    "./ubuntuRemote": "./ubuntuRemote/index.ts",
-    "./ubuntuRemote/*": "./ubuntuRemote/*.ts"
+    "./*": "./*.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
     "hono": "4.12.30",
-    "immer": "10.2.0",
     "mcpserver": "workspace:*",
     "ubuntu-lib": "workspace:*",
-    "zustand": "5.0.13",
-    "zustand-lib": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
     "hono": "4.12.30",
-    "immer": "10.2.0",
     "mcpserver": "workspace:*",
     "ubuntu-lib": "workspace:*",
     "typescript": "^5.9.3",
-    "zustand": "5.0.13",
-    "zustand-lib": "workspace:*",
     "zod": "^4.4.3"
   }
 }

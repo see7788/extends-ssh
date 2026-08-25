@@ -1,7 +1,7 @@
 import type Docker from "../Docker/index.ts";
 import type Nginx from "../Nginx/index.ts";
 import type Ssh from "../Ssh/index.ts";
-import store from "../store.ts";
+import store from "../store/index.ts";
 
 export default abstract class Peerjs {
   protected abstract readonly docker: Docker;

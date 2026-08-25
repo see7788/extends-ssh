@@ -2,7 +2,7 @@ import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
 import type Docker from "../Docker/index.ts";
 import type Ssh from "../Ssh/index.ts";
-import store from "../store.ts";
+import store from "../store/index.ts";
 
 export default abstract class StunServer {
   protected abstract readonly docker: Docker;

@@ -1,23 +1,39 @@
 import type Apt from "../Apt/index.ts";
 import type Ssh from "../Ssh/index.ts";
-import store from "../store.ts";
+import store from "../store/index.ts";
+import { z } from "zod";
 
-type ProxyRoute = {
-  name: string;
-  hostname: string;
-  pathname: `/${string}`;
-  upstreamPort: number;
-};
+const nameValidator = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
+const hostnameValidator = z.string().trim().toLowerCase()
+  .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i);
+const pathnameValidator = z.string().trim()
+  .regex(/^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]*$/)
+  .transform(pathname => pathname as `/${string}`);
+const linuxAbsolutePathValidator = z.string().trim()
+  .regex(/^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]+$/);
+const portValidator = z.number().int().min(1).max(65_535);
 
-type StaticRoute = {
-  name: string;
-  hostname: string;
-  pathname: `/${string}`;
-  root: string;
-  spaFallback: boolean;
-};
+export const proxyRouteIsRunningValidator = z.object({
+  name: nameValidator,
+  hostname: hostnameValidator,
+  pathname: pathnameValidator,
+  upstreamPort: portValidator,
+}).strict();
+export const staticRouteIsRunningValidator = z.object({
+  name: nameValidator,
+  hostname: hostnameValidator,
+  pathname: pathnameValidator,
+  root: linuxAbsolutePathValidator,
+  spaFallback: z.boolean(),
+}).strict();
+export const routeCloseValidator = z.object({
+  name: nameValidator,
+  hostname: hostnameValidator,
+}).strict();
 
-type Route = Pick<ProxyRoute, "name" | "hostname">;
+type ProxyRoute = z.infer<typeof proxyRouteIsRunningValidator>;
+type StaticRoute = z.infer<typeof staticRouteIsRunningValidator>;
+type Route = z.infer<typeof routeCloseValidator>;
 
 export default abstract class Nginx {
   protected abstract readonly apt: Apt;
@@ -25,8 +41,7 @@ export default abstract class Nginx {
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
-    const domain = store.getState().public.domain.trim().toLowerCase();
-    this.hostnameRequired(domain);
+    const domain = hostnameValidator.parse(store.getState().public.domain);
     return {
       domain,
       httpPort: 80 as const,
@@ -47,10 +62,7 @@ export default abstract class Nginx {
   }
 
   public async proxyRouteIsRunning(route: ProxyRoute): Promise<void> {
-    const name = this.nameRequired(route.name);
-    const hostname = this.hostnameRequired(route.hostname);
-    const pathname = this.pathnameRequired(route.pathname);
-    const upstreamPort = this.portRequired(route.upstreamPort);
+    const { name, hostname, pathname, upstreamPort } = proxyRouteIsRunningValidator.parse(route);
     const proxyConfiguration = `
     proxy_pass http://127.0.0.1:${upstreamPort};
     proxy_http_version 1.1;
@@ -74,11 +86,8 @@ export default abstract class Nginx {
   }
 
   public async staticRouteIsRunning(route: StaticRoute): Promise<void> {
-    const name = this.nameRequired(route.name);
-    const hostname = this.hostnameRequired(route.hostname);
-    const pathname = this.pathnameRequired(route.pathname);
-    const root = this.linuxAbsolutePathRequired(route.root);
-    const fallback = route.spaFallback
+    const { name, hostname, pathname, root, spaFallback } = staticRouteIsRunningValidator.parse(route);
+    const fallback = spaFallback
       ? pathname === "/" ? "/index.html" : `${pathname}/index.html`
       : "=404";
     await this.routeWrite({
@@ -92,8 +101,7 @@ export default abstract class Nginx {
   }
 
   public async routeClose(route: Route): Promise<void> {
-    const name = this.nameRequired(route.name);
-    const hostname = this.hostnameRequired(route.hostname);
+    const { name, hostname } = routeCloseValidator.parse(route);
     await this.isRemoteRunning();
     await this.ssh.execute(`
 set -e
@@ -169,43 +177,6 @@ HTTPS
 /www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
 /www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf
 `);
-  }
-
-  private nameRequired(name: string): string {
-    const value = name.trim();
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) {
-      throw new TypeError(`Nginx 路由名称无效: ${name}`);
-    }
-    return value;
-  }
-
-  private hostnameRequired(hostname: string): string {
-    const value = hostname.trim().toLowerCase();
-    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(value)) {
-      throw new TypeError(`Nginx hostname 无效: ${hostname}`);
-    }
-    return value;
-  }
-
-  private pathnameRequired(pathname: string): `/${string}` {
-    if (!/^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]*$/.test(pathname)) {
-      throw new TypeError(`Nginx pathname 无效: ${pathname}`);
-    }
-    return pathname as `/${string}`;
-  }
-
-  private linuxAbsolutePathRequired(root: string): string {
-    if (!/^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]+$/.test(root)) {
-      throw new TypeError(`Nginx 静态目录必须是 Linux 绝对路径: ${root}`);
-    }
-    return root;
-  }
-
-  private portRequired(port: number): number {
-    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-      throw new TypeError(`Nginx 上游端口必须是 1-65535 的整数: ${String(port)}`);
-    }
-    return port;
   }
 
   private hostnamePath(hostname: string): string {

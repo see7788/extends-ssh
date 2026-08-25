@@ -1,17 +1,21 @@
 import net from "node:net";
 import type Ssh from "../Ssh/index.ts";
+import { z } from "zod";
 
-type ForwardRegistration = {
-  name: string;
-  local: {
-    host: string;
-    port: number;
-  };
-  remote: {
-    host: string;
-    port: number;
-  };
-};
+const hostValidator = z.string().trim().min(1);
+export const registerValidator = z.object({
+  name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
+  local: z.object({
+    host: hostValidator,
+    port: z.number().int().min(1).max(65_535),
+  }).strict(),
+  remote: z.object({
+    host: hostValidator,
+    port: z.number().int().min(0).max(65_535),
+  }).strict(),
+}).strict();
+
+type ForwardRegistration = z.infer<typeof registerValidator>;
 
 type ForwardState = ForwardRegistration;
 
@@ -49,7 +53,7 @@ export default abstract class Forward {
   private readonly forwards = new Map<string, ForwardData>();
 
   public register(registrationInput: ForwardRegistration): RegisteredForward {
-    const registration = this.registrationRead(registrationInput);
+    const registration = registerValidator.parse(registrationInput);
     const current = this.forwards.get(registration.name);
     if (current) {
       if (!this.registrationSame(current.state, registration)) {
@@ -157,24 +161,6 @@ export default abstract class Forward {
     forward.connections.clear();
   }
 
-  private registrationRead(registration: ForwardRegistration): ForwardRegistration {
-    const name = registration.name.trim();
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) {
-      throw new TypeError(`SSH 转发名称无效: ${registration.name}`);
-    }
-    return {
-      name,
-      local: {
-        host: this.hostRequired(registration.local.host, "本地目标地址"),
-        port: this.portRequired(registration.local.port, "本地目标端口"),
-      },
-      remote: {
-        host: this.hostRequired(registration.remote.host, "远端监听地址"),
-        port: this.portRequired(registration.remote.port, "远端监听端口", true),
-      },
-    };
-  }
-
   private registrationSame(left: ForwardRegistration, right: ForwardRegistration): boolean {
     return left.name === right.name
       && left.local.host === right.local.host
@@ -183,16 +169,4 @@ export default abstract class Forward {
       && left.remote.port === right.remote.port;
   }
 
-  private hostRequired(host: string, label: string): string {
-    const value = host.trim();
-    if (!value) throw new TypeError(`${label}不能为空`);
-    return value;
-  }
-
-  private portRequired(port: number, label: string, zeroAllowed = false): number {
-    if (!Number.isInteger(port) || port < (zeroAllowed ? 0 : 1) || port > 65_535) {
-      throw new TypeError(`${label}必须是${zeroAllowed ? "0-65535" : "1-65535"}的整数`);
-    }
-    return port;
-  }
 }
