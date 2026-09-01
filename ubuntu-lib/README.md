@@ -1,168 +1,180 @@
-# ubuntu-lib
+# extends-ssh
 
-`ubuntu-lib` 为 Vite、WebRTC 信令、STUN 和 PM2 分别提供独立的云端生产者。外部 Vite 服务
-从 `ubuntu-lib/index.ts` 取得专属插件；插件自动报备真实构建产物，并在构建结束后提交和验证
-服务。业务消费者只读取对应生产者的 `state`。
+extends-ssh 是一个个人单服务器中心：通过一条 SSH 连接，把 Ubuntu 上的 Node.js、PM2、Nginx、Docker、SFTP、端口转发、PeerJS、STUN 和 WebRTC 信令能力组合成可复用的运行时。Vite 应用只需从 ubuntu-lib/index.ts 取得 ubuntu 单例并组合插件；AI 或运维工具则通过 ubuntu-mcpserver 的切片暴露 MCP 接口。项目默认把运行配置持久化到 ~/.extends-ssh，生产使用前必须替换 ubuntu-lib/Ssh/store.ts 中的连接配置，并且不要提交真实密码。最短的 Vite 接入方式是在具体 application 包中声明 ubuntu-lib 和 Vite，固定 server.port，然后把适用的插件放入 vite.config.ts（Electron 使用 electron.vite.config.ts）。如果由 3005 的 MCP 中心协助接入，先读取 vite.readme 资源，再使用 vite.projectRead、vite.dependenciesInstall 和 vite.importsEnsure 完成识别、依赖与导入检查。
 
-```text
-ubuntu-lib/
-├── index.ts                 # 包入口，只组合并暴露根级生产者
-│   ├── forward: Forward  维护本地、远端端点组成的 SSH 转发
-│   ├── sftp: Sftp  交付本地与远端之间的双向文件传输
-│   ├── stunServer: StunServer  交付 STUN 数据并保障 Coturn
-│   ├── webrtcsignaling: Webrtcsignaling  交付并保障 WebRTC 信令
-│   ├── vite: Vite  组合 Vite 能力对象并注入 Forward、Nginx、Nodejs、Pm2、Sftp
-│   └── pm2: Pm2  交付并维护远程 PM2 进程数据
-├── store.ts                 # 内部主仓库，只组合根配置和独立切片
-│   ├── ssh  SSH 连接所需的外部固定数据
-│   ├── mainDomain: string  已备案主域名；Vite 据此生产端口子域名
-│   ├── remoteRoot: string  所有远端发布共同使用的私有根路径
-│   └── 组合 StunServer、Webrtcsignaling 配置切片
-├── Forward/
-│   └── index.ts             # 单 class 的 SSH 端口转发生产者
-│       ├── register()  注册一组本地、远端配置并返回运行时实例
-│       │   ├── readonly state  只交付 name、local、remote 配置
-│       │   ├── isRunning()  当次保障隧道并返回 remotePort
-│       │   └── close()  关闭当前隧道
-│       └── dispose()  关闭全部转发及共享 SSH 会话
-├── Sftp/
-│   └── index.ts             # 双向 SFTP 生产者
-│       ├── remoteUpload()  把本地文件上传到远端
-│       ├── locDownload()  把远端文件下载到本地
-│       └── dispose()  关闭当前 SFTP 对象共用的 SSH 会话
-├── StunServer/
-│   ├── store.ts             # STUN 服务配置切片
-│   │   └── stunServer.port: number  Coturn 独占端口
-│   └── index.ts             # STUN 服务生产者
-│       ├── readonly state  交付 host、port 和 secure
-│       └── isRemoteRunning(): Promise<void>  保障 Coturn 并验证公网 STUN 响应
-├── Webrtcsignaling/
-│   ├── store.ts             # WebRTC 信令专属切片
-│   │   ├── webrtcsignaling  仅保存外部产物路径、JWT secret、信令端口和路径
-│   │   └── webrtcsignalingActions.register()  接收专属 Vite 插件的路径和 JWT secret 报备
-│   ├── vitePlugin.ts        # WebRTC 信令专属 Vite 生命周期
-│   │   └── 统一开发代理、源码进程、服务环境、构建输出识别和构建后提交
-│   └── index.ts             # WebRTC 信令生产者
-│       ├── readonly state  交付 host、port、path 和 secure
-│       ├── isRemoteRunning(): Promise<void>  无参数发布并验证 HTTP、凭证和 WebSocket 信令
-│       └── vitePlugin({ entry, jwtSecret }): Plugin  只接收外部实现不可推导的源码事实
-├── Vite/
-│   └── index.ts             # 与其他生产者对等的 Vite 抽象业务对象
-│       ├── state(port)  交付端口对应的公网 HTTPS 地址
-│       ├── dev.forward(): Plugin  监听开发服务器、建立 SSH 转发并在关闭时恢复生产路由
-│       └── pro
-│           ├── sftp(): Plugin  构建结束后通过 SFTP 发布静态产物并接入 Nginx
-│           └── nodejs(): Plugin  构建结束后发布 Node.js 服务并维护 PM2 与 Nginx
-├── Pm2.ts                  # Ubuntu PM2 运行时数据生产者
-│   ├── readonly state  交付服务器地址、daemon 状态、更新时间与完整进程列表
-│   ├── isRunning(): Promise<typeof state>  确保 PM2 可用并刷新完整进程数据
-│   │   └── 调用 Public.pm2IsRunning()、Pm2.refresh()
-│   ├── refresh(): Promise<typeof state>  从 PM2 daemon 读取并校验完整进程数据
-│   │   └── 调用 Public.execute()
-│   ├── stop(id: number): Promise<typeof state>  停止指定 PM2 进程并刷新完整数据
-│   │   └── 调用 Public.pm2IsRunning()、Public.execute()、Pm2.refresh()
-│   ├── restart(id: number): Promise<typeof state>  重启指定 PM2 进程并刷新完整数据
-│   │   └── 调用 Public.pm2IsRunning()、Public.execute()、Pm2.refresh()
-│   └── dispose(): void  关闭当前 PM2 生产者持有的 SSH 会话
-│       └── 调用 Public.dispose()
-└── public.ts                # 新服务共同消费的 SSH、命令与 PM2 基本能力
-    ├── readonly ssh: NodeSSH  让底层生产者执行 SSH 命令与端口转发
-    ├── readonly sftp: Sftp  在当前 SSH 会话上组合双向文件传输
-    ├── sshIsRunning(): Promise<void>  确保当前服务实例拥有可用 SSH 会话
-    │   └── 调用 store.ssh、NodeSSH.connect()、NodeSSH.execCommand()
-    ├── execute(command: string): Promise<SSHExecCommandResponse>  执行并校验远程命令
-    │   └── 调用 Public.sshIsRunning()、NodeSSH.execCommand()
-    ├── pm2IsRunning(): Promise<void>  确保远程 Node 项目拥有持久 PM2 运行环境
-    │   └── 调用 Public.execute()
-    ├── serviceIsRunning(): Promise<void>  原子发布专属生产者提交的单文件 Node 服务
-    │   └── 调用 Public.pm2IsRunning()、Public.execute()、Public.sftp.remoteUpload()
-    └── dispose(): void  关闭当前服务实例持有的 SSH 会话
-        └── 调用 NodeSSH.dispose()
-```
+## 项目结构
 
-Hono 与多个 React 项目：
+~~~text
+extends-ssh/
+├── ubuntu-lib/                         # 被 Vite 项目直接消费的运行时库
+│   ├── index.ts                         # 只组合并暴露根级 ubuntu 单例
+│   │   ├── ssh                         # SSH 配置、连接、命令执行与释放
+│   │   ├── apt                         # Ubuntu Apt 基础依赖保障
+│   │   ├── nodejs                      # 固定版本 Node.js 保障与生产依赖安装
+│   │   ├── docker                      # Docker daemon 保障
+│   │   ├── sftp                        # 本地与远端文件传输
+│   │   ├── pm2                         # PM2 daemon 与进程生命周期
+│   │   ├── forward                      # SSH 端口转发注册与关闭
+│   │   ├── nginx                        # HTTPS、静态资源与反向代理路由
+│   │   ├── peerjs                       # PeerJS 公共服务
+│   │   ├── stunServer                   # Coturn/STUN 公共服务
+│   │   ├── vite                         # Vite 开发转发与生产发布插件
+│   │   └── webrtcsignaling               # WebRTC 信令服务与专属 Vite 插件
+│   ├── Apt/index.ts                     # 远端 Apt 基础组件
+│   │   └── isRemoteRunning()             # 幂等安装并验证 lsof、curl、ufw 等命令
+│   ├── Docker/index.ts                   # 远端 Docker 运行时
+│   │   └── isRemoteRunning()             # 安装、启动并验证 Docker daemon
+│   ├── Forward/index.ts                  # SSH 反向转发
+│   │   ├── register()                    # 注册本地/远端端点，按 name 复用
+│   │   ├── registered.state              # 只读转发配置
+│   │   ├── registered.isRunning()        # 建立转发并返回实际 remotePort
+│   │   ├── registered.close()            # 关闭转发及活动连接
+│   │   └── dispose()                     # 关闭全部转发
+│   ├── Nginx/index.ts                    # 远端 Nginx 与证书路由
+│   │   ├── state                        # domain、httpPort、httpsPort、secure
+│   │   ├── isRemoteRunning()             # 验证 Nginx、Certbot 与防火墙
+│   │   ├── proxyRouteIsRunning(route)    # 写入 HTTPS 反向代理路由
+│   │   ├── staticRouteIsRunning(route)   # 写入 HTTPS 静态资源路由
+│   │   └── routeClose(route)             # 删除路由并 reload Nginx
+│   ├── Nodejs/index.ts                   # 远端 Node.js 与部署包
+│   │   ├── isRemoteRunning()             # 安装并校验固定 Node.js 版本
+│   │   ├── deploymentPackageCreate()    # 从构建产物解析外部依赖并生成 package.json
+│   │   └── dependenciesRemoteInstall()  # 在远端项目目录安装生产依赖
+│   ├── Pm2/index.ts                      # PM2 进程生产者
+│   │   ├── state                        # host、status、updatedAt 与进程摘要
+│   │   ├── isRunning()/refresh()         # 保障 daemon 并读取完整进程状态
+│   │   ├── stop(id)/restart(id)          # 操作指定 PM2 进程并刷新状态
+│   │   ├── processIsRemoteRunning()      # 启动命名进程并验证目标端口
+│   │   ├── processRemoteClose(name)      # 停止命名进程
+│   │   └── dispose()                     # 释放 PM2 使用的 SSH 会话
+│   ├── Sftp/index.ts                     # 双向 SFTP 文件能力
+│   │   ├── remoteUpload()/remoteDirectoryUpload()   # 上传文件或目录
+│   │   ├── remoteDirectoryReplace()     # 原子替换远端目录，失败保留旧目录
+│   │   ├── remoteTextUpload()/remoteTextRead()      # 写入或读取远端文本
+│   │   └── locDownload()                 # 下载远端文件到本地
+│   ├── Ssh/index.ts                      # SSH 会话边界
+│   │   ├── state                        # host、port、username、password（仅库内使用）
+│   │   ├── revision                     # 连接版本号，供转发失效检测
+│   │   ├── isRunning()/execute(command)  # 建立连接、执行并校验远程命令
+│   │   └── dispose()                     # 释放当前连接
+│   ├── Peerjs/index.ts                   # PeerJS 公共服务
+│   │   ├── state                        # host、port、path、secure、key
+│   │   └── isRemoteRunning()             # 保障 Docker 容器、Nginx 路由和公网健康检查
+│   ├── StunServer/index.ts               # STUN 公共服务
+│   │   ├── state                        # host、port、secure=false
+│   │   ├── isRemoteRunning()             # 保障 Coturn、UDP/TCP 防火墙与 STUN 响应
+│   │   └── vitePlugin()                  # 注入 globalThis.WEBRTC_STUN_URL
+│   ├── Vite/index.ts                     # Vite 接入与发布编排
+│   │   ├── readme(uri?)                  # 返回本 README 的 MCP resource 内容
+│   │   ├── projectRead({ projectPath })  # 识别 application profile 与公开表达式
+│   │   ├── dependenciesInstall()        # 补齐 ubuntu-lib、Vite devDependencies 并 pnpm install
+│   │   ├── importsEnsure()               # 为项目内 .ts 文件补齐 ubuntu 导入
+│   │   ├── state(port)                   # 返回 vite-<port>.dev.<domain> 的 HTTPS 地址
+│   │   ├── dev.forward()                # 开发服务器监听后建立 SSH 转发并接入 Nginx
+│   │   └── pro.sftp()/pro.nodejs()       # 构建后发布静态站点或 Node.js 服务
+│   ├── Webrtcsignaling/                  # WebRTC 信令服务
+│   │   ├── index.ts                     # state、isRemoteRunning()、vitePlugin(options)
+│   │   ├── vitePlugin.ts                # 开发代理、tsx 子进程、构建报备与关闭清理
+│   │   └── store.ts                     # entry、path、固定 listenPort=9001、pathname=/signal
+│   ├── store/                            # 内部 Zustand 持久化主仓库，不是业务消费入口
+│   │   ├── index.ts                     # cwdPersist 到 ~/.extends-ssh，并组合配置切片
+│   │   └── type.ts                      # 组合 Store 类型
+│   ├── Public/store.ts                   # domain 与 remoteRoot 默认配置
+│   ├── Ssh/store.ts                      # SSH host、port、username、password 配置
+│   ├── Peerjs/store.ts                   # PeerJS 镜像、key、端口与路径
+│   ├── StunServer/store.ts               # STUN 端口（默认 3478）
+│   └── package.json                      # ubuntu-lib 包边界与 Vite peerDependency
+├── ubuntu-mcpserver/                    # 把 ubuntu-lib 能力注册为 MCP slice
+│   ├── slices.ts                         # 汇总并导出 12 个切片
+│   │   ├── apt、docker、nginx、nodejs  # 远端基础设施与路由
+│   │   ├── peerjs、stunServer           # WebRTC 周边公共服务
+│   │   ├── pm2、sftp、ssh                # 进程、文件与连接运维
+│   │   ├── public                        # 公共域名与远端根目录状态
+│   │   ├── vite                          # Vite README、识别、依赖、导入与地址状态
+│   │   └── webrtcsignaling               # 信令状态与保障
+│   ├── vite/index.ts                     # resource GET /readme；tool POST /projectRead、/dependenciesInstall、/importsEnsure、/state
+│   ├── ssh/index.ts                      # tool POST /config、/state、/connect、/execute、/dispose
+│   ├── sftp/index.ts                     # tool POST /remoteUpload、/remoteTextUpload、/remoteTextRead、/locDownload
+│   ├── nginx/index.ts                    # tool POST /state、/ensure、/proxyRouteIsRunning、/staticRouteIsRunning、/routeClose
+│   ├── nodejs/index.ts                   # tool POST /ensure、/deploymentPackageCreate、/dependenciesRemoteInstall
+│   ├── pm2/index.ts                      # tool POST /state、/refresh、/stop、/restart、/processIsRemoteRunning、/processRemoteClose
+│   ├── apt/index.ts                      # tool POST /ensure
+│   ├── docker/index.ts                   # tool POST /ensure
+│   ├── public/index.ts                   # tool POST /state（不返回 SSH 密码）
+│   ├── peerjs/index.ts                   # tool POST /state、/ensure
+│   ├── stunServer/index.ts               # tool POST /state、/ensure
+│   ├── webrtcsignaling/index.ts          # tool POST /state、/ensure
+│   └── package.json                      # 私有 mcpserver-library 包
+└── pnpm-workspace.yaml                   # 两个本地包及其 workspace 依赖
+~~~
 
-```ts
+## Vite 接入
+
+projectRead 只接受具体 application 包，不接受 workspace 根、extends-* 包或 *-lib 包。项目必须声明 ubuntu-lib，并满足以下 profile 与配置文件约束：
+
+| package.json.tpltype | 必须存在的配置 | MCP 返回的公开表达式 |
+| --- | --- | --- |
+| node-application | vite.config.ts | ubuntu.vite.pro.nodejs() |
+| hono-application | vite.config.ts，且声明 hono | ubuntu.vite.dev.forward()、ubuntu.vite.pro.nodejs() |
+| electron-vite-application | electron.vite.config.ts，且声明 electron-vite | ubuntu.vite.dev.forward() |
+
+所有 profile 都要求 server.port 是 1–65535 之间的固定整数。端口既是开发转发的本地端口，也是生产域名 vite-<port>.dev.<主域名> 的稳定标识。
+
+### Node.js Vite 服务
+
+~~~ts
 import ubuntu from "ubuntu-lib/index.ts";
-import honoReact from "vite-config-lib/plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  server: { port: 5173 },
+  server: { port: 8788 },
+  plugins: [ubuntu.vite.pro.nodejs()],
+});
+~~~
+
+pro.nodejs() 在 closeBundle 中检查 dist，根据构建产物解析外部依赖，上传 dist 与生产 package.json，远端执行 npm install --omit=dev，通过 PM2 以 vite-node-8788 启动 node dist/<package-name>/index.js，最后写入 Nginx 反向代理并做公网校验。
+
+### Hono 或需要公网开发转发的 Vite 服务
+
+~~~ts
+import ubuntu from "ubuntu-lib/index.ts";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  server: { port: 8789 },
   plugins: [
-    honoReact(
-      {
-        honoEntry: "src/index.ts",
-        honoHost: "127.0.0.1",
-        honoPort: [3005, 3111],
-      },
-      ["../reactapp"],
-    ),
     ubuntu.vite.dev.forward(),
     ubuntu.vite.pro.nodejs(),
   ],
 });
-```
+~~~
 
-普通 React 静态站点：
+dev.forward() 只在 serve 阶段生效：强制监听 127.0.0.1 与固定端口，建立到远端随机端口的 SSH 转发，把 vite-8789.dev.<主域名> 指向该转发，并用 /__vite_ping 验证。开发服务器关闭时会根据远端 .extends-ssh-kind 恢复上一条静态或 Node 路由。
 
-```ts
-import react from "@vitejs/plugin-react";
+### 静态产物发布
+
+需要发布纯静态站点时，直接使用 ubuntu.vite.pro.sftp()。它会原子替换远端站点目录，停止同端口的 vite-node-<port>，标记 .extends-ssh-kind=static，配置 Nginx SPA 路由并验证公网首页。
+
+### Electron Renderer
+
+~~~ts
 import ubuntu from "ubuntu-lib/index.ts";
-import { defineConfig } from "vite";
-
-export default defineConfig({
-  server: { port: 5174 },
-  plugins: [react(), ubuntu.vite.dev.forward(), ubuntu.vite.pro.sftp()],
-});
-```
-
-普通 Electron React Renderer：
-
-```ts
-import ubuntu from "ubuntu-lib/index.ts";
-import rendererReact from "electron-vite-config-lib/rendererReactPlugin/plugin";
 import { defineConfig } from "electron-vite";
 
 export default defineConfig({
   renderer: {
-    plugins: [
-      rendererReact({ otherPort: 8887 }, ["."]),
-      ubuntu.vite.dev.forward(),
-    ],
+    plugins: [ubuntu.vite.dev.forward()],
   },
 });
-```
+~~~
 
-Electron Hono 与多个 React Renderer：
+Electron 项目使用 electron.vite.config.ts，由 Electron 自己组合 main、preload 与 renderer；ubuntu.vite.dev.forward() 放在实际提供 Vite HTTP server 的 renderer 配置中。
 
-```ts
-import react from "@vitejs/plugin-react";
-import ubuntu from "ubuntu-lib/index.ts";
-import { rendererHonoReact } from "electron-vite-config-lib/rendererReactPlugin/plugin";
-import { defineConfig } from "electron-vite";
+## WebRTC 信令与 STUN
 
-const honoReact = rendererHonoReact(
-  { honoHost: "127.0.0.1", honoPort: [8788, 8789] },
-  ["../admin-web"],
-  ["../user-web"],
-);
+信令源码项目使用 { entry } 形式的专属插件；当前实现不再接收 jwtSecret。entry 必须是项目根目录内的 .ts 或 .tsx 文件，且信令项目必须在 package.json 的 dependencies 中声明 tsx。插件会把开发服务固定在本机 9001，把源码 tsx watch 子进程放在 9002，注入 WEBRTC_SIGNALING_HOSTNAME、WEBRTC_SIGNALING_PATH、WEBRTC_SIGNALING_PORT，构建结束后自动报备源码入口并提交远端 PM2/Nginx 服务。
 
-export default defineConfig({
-  main: {
-    plugins: [honoReact.main],
-  },
-  renderer: {
-    plugins: [react(), honoReact.renderer, ubuntu.vite.dev.forward()],
-  },
-});
-```
-
-WebRTC 信令源码项目直接在 Vite 配置中使用专属插件。外部只提供源码入口和 JWT secret；
-插件统一完成开发代理、源码进程、环境注入、构建、真实产物报备和远端提交，不需要额外的
-Vite 辅助文件或报备文件：
-
-```ts
+~~~ts
 import ubuntu from "ubuntu-lib/index.ts";
 import { defineConfig } from "vite";
 
@@ -170,26 +182,86 @@ export default defineConfig({
   plugins: [
     ubuntu.webrtcsignaling.vitePlugin({
       entry: "./server.ts",
-      jwtSecret: "webrtcsignaling-open-issuer",
     }),
   ],
 });
-```
+~~~
 
-外部消费者不接触主 store、产物路径、JWT secret 或部署方法，只消费对应切片公开对象交付的
-`state`：
+普通业务项目以 { projectName } 形式消费信令服务；插件通过 define 注入 globalThis.WEBRTC_PROJECT_NAME 和 globalThis.WEBRTC_SIGNALING_URL。需要时可把信令和 STUN 消费插件一起放进业务 Vite 配置：
 
-```ts
+~~~ts
+import ubuntu from "ubuntu-lib/index.ts";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [
+    ubuntu.webrtcsignaling.vitePlugin({ projectName: "chat-web" }),
+    ubuntu.stunServer.vitePlugin(),
+  ],
+});
+~~~
+
+STUN 消费者可读取 globalThis.WEBRTC_STUN_URL，也可以直接读取公开状态：
+
+~~~ts
 import ubuntu from "ubuntu-lib/index.ts";
 
 const signalingServer = ubuntu.webrtcsignaling.state;
 const stunServer = ubuntu.stunServer.state;
-const signalingProtocol = signalingServer.secure ? "wss" : "ws";
-const stunProtocol = stunServer.secure ? "stuns" : "stun";
-const signaling = new WebSocket(
-  `${signalingProtocol}://${signalingServer.host}:${signalingServer.port}${signalingServer.path}`,
-);
-const connection = new RTCPeerConnection({
-  iceServers: [{ urls: `${stunProtocol}:${stunServer.host}:${stunServer.port}` }],
-});
-```
+const signalingUrl = (signalingServer.secure ? "wss://" : "ws://")
+  + signalingServer.host + ":" + signalingServer.port + signalingServer.path;
+const stunUrl = (stunServer.secure ? "stuns:" : "stun:")
+  + stunServer.host + ":" + stunServer.port;
+~~~
+
+webrtcsignaling.isRemoteRunning() 会检查源码报备、远端发布 revision、PM2 健康状态、HTTPS JSON 响应和 WebSocket 握手；stunServer.isRemoteRunning() 会保障 Coturn 容器、TCP/UDP 防火墙并发送真实 STUN binding request。
+
+## MCP 与 3005
+
+ubuntu-mcpserver/slices.ts 只负责把库中的单例能力注册成 MCP slice，宿主服务负责挂载路径。ubuntu-mcpserver 当前提供 12 个 slice：apt、docker、nginx、nodejs、peerjs、pm2、public、sftp、ssh、stunServer、vite、webrtcsignaling。
+
+人类查阅入口使用 GET resource；例如 3005 的项目目录会展示 vite.readme 的 GET 路由并返回本 README。工具本身按代码中的 MCP 注册保持 POST，并由宿主按 catalog 前缀挂载：
+
+~~~text
+GET  /<catalog>/vite/readme
+POST /<catalog>/vite/projectRead
+POST /<catalog>/vite/dependenciesInstall
+POST /<catalog>/vite/importsEnsure
+POST /<catalog>/vite/state
+~~~
+
+典型的 AI 接入顺序是：
+
+1. 读取 vite.readme，获得公开约定和 profile 表达式。
+2. 调用 vite.projectRead({ projectPath })，确认这是具体 application 包、配置文件和可用表达式。
+3. 必要时调用 vite.dependenciesInstall({ projectPath })，补齐当前约定的 ubuntu-lib: workspace:* 与 vite: ^8.0.11 并执行 pnpm install。
+4. 对已有 TypeScript 配置调用 vite.importsEnsure({ projectPath, sourceFilePath })，只会修改项目内部已有的 .ts 文件，不修改 .d.ts。
+5. 由应用自己的 Vite 配置消费 ubuntu.vite.* 插件；远端保障类工具（如 nginx.ensure、pm2.refresh）按需调用。
+
+SSH 密码永远不会由 ssh/config、ssh/state 或 public/state MCP 路由返回；密码只存在于 ubuntu-lib 内部 SSH 状态，调用方应把它视为敏感配置。
+
+## 运行时边界
+
+~~~text
+ubuntu.ssh
+├── apt.isRemoteRunning()
+│   ├── nodejs.isRemoteRunning()
+│   │   └── pm2.isRemoteRunning()/processIsRemoteRunning()
+│   └── docker.isRemoteRunning()
+│       ├── peerjs.isRemoteRunning()
+│       └── stunServer.isRemoteRunning()
+├── sftp.remoteUpload()/remoteDirectoryReplace()
+├── forward.register().isRunning()
+└── nginx.isRemoteRunning()/proxyRouteIsRunning()/staticRouteIsRunning()
+~~~
+
+这些对象都由 ubuntu-lib/index.ts 组合，外部不需要创建第二个 store 或自行拼接 SSH 会话。业务消费优先读取 state；需要产生远端副作用时，显式调用对应的 isRemoteRunning、发布、路由或进程方法。
+
+## 本地验证
+
+~~~bash
+pnpm --filter ubuntu-lib typecheck
+pnpm --filter ubuntu-mcpserver typecheck
+~~~
+
+ubuntu-lib 是可被 Vite 应用直接导入的包，ubuntu-mcpserver 是私有 MCP 适配包；两者共享 workspace 中的 mcpserver、zustand-lib 与其他依赖，但主 store 仍只在 ubuntu-lib 内部组合。
