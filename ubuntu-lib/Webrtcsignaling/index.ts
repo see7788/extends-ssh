@@ -12,7 +12,8 @@ import {
   resolve,
 } from "node:path";
 import { nginx } from "../Nginx/index.ts";
-import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { pm2 } from "../Pm2/index.ts";
 import { sftp } from "../Sftp/index.ts";
 import store from "../store/index.ts";
@@ -297,7 +298,7 @@ trap - ERR
 
 export const webrtcsignaling = new Webrtcsignaling();
 
-export const webrtcsignalingSlice = mcpRegister.slice("webrtcsignaling")
+export const webrtcsignalingSlice = mcpserver.metas("webrtcsignaling")
   .tool(
     "post",
     "/state",

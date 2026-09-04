@@ -1,5 +1,6 @@
 import { docker } from "../Docker/index.ts";
-import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { nginx } from "../Nginx/index.ts";
 import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
@@ -92,7 +93,7 @@ exit 1
 
 export const peerjs = new Peerjs();
 
-export const peerjsSlice = mcpRegister.slice("peerjs")
+export const peerjsSlice = mcpserver.metas("peerjs")
   .tool(
     "post",
     "/state",

@@ -1,4 +1,3 @@
-import mcpserver from "mcpserver";
 import { z } from "zod";
 
 export const emptyValidator = z.object({}).strict();
@@ -32,6 +31,3 @@ export type McpJsonContext<Input> = {
   };
   json(body: unknown, status?: number): unknown;
 };
-
-// Keep the workspace mcpserver/Zod type mismatch at the MCP boundary.
-export const mcpRegister = mcpserver.register as any;

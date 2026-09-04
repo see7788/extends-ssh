@@ -1,5 +1,6 @@
 import { nodejs } from "../Nodejs/index.ts";
-import { emptyValidator, mcpRegister, mutate, read, remoteRead, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, read, remoteRead, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
 
@@ -214,7 +215,7 @@ pm2 --version >/dev/null
 
 export const pm2 = new Pm2();
 
-export const pm2Slice = mcpRegister.slice("pm2")
+export const pm2Slice = mcpserver.metas("pm2")
   .tool(
     "post",
     "/state",

@@ -1,5 +1,6 @@
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
-import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { z } from "zod";
 import store from "../store/index.ts";
 
@@ -68,7 +69,7 @@ export default class Ssh {
 
 export const ssh = new Ssh();
 
-export const sshSlice = mcpRegister.slice("ssh")
+export const sshSlice = mcpserver.metas("ssh")
   .tool(
     "post",
     "/config",

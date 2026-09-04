@@ -6,8 +6,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Plugin, ResolvedConfig } from "vite";
 import { z } from "zod";
 import { forward } from "../Forward/index.ts";
+import mcpserver from "mcpserver";
 import {
-  mcpRegister,
   mutate,
   read,
   type McpJsonContext,
@@ -675,7 +675,7 @@ export const vite = new Vite();
 const readmeUri = new URL("../README.md", import.meta.url).href;
 const readmePath = fileURLToPath(new URL("../README.md", import.meta.url));
 
-export const viteSlice = mcpRegister.slice("vite")
+export const viteSlice = mcpserver.metas("vite")
   .resource(
     "get",
     "/readme",

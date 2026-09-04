@@ -1,5 +1,6 @@
 import net from "node:net";
-import { emptyValidator, mcpRegister, mutate, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
 
@@ -174,7 +175,7 @@ export default class Forward {
 
 export const forward = new Forward();
 
-export const forwardSlice = mcpRegister.slice("forward")
+export const forwardSlice = mcpserver.metas("forward")
   .tool(
     "post",
     "/register",

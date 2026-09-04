@@ -29,7 +29,7 @@ export {
   webrtcsignalingSlice,
 };
 
-export default mcpserver.register.register(
+export default mcpserver.room("ubuntu", "配置和交付 Ubuntu 上的系统与应用能力。").register(
   aptSlice,
   dockerSlice,
   forwardSlice,
@@ -43,7 +43,4 @@ export default mcpserver.register.register(
   stunServerSlice,
   viteSlice,
   webrtcsignalingSlice,
-).import({
-  roomName: "ubuntu",
-  description: "配置和交付 Ubuntu 上的系统与应用能力。",
-});
+).import();

@@ -1,7 +1,8 @@
 import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
 import { docker } from "../Docker/index.ts";
-import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
 
@@ -122,7 +123,7 @@ ss -lun | grep -Eq ':${state.port}[[:space:]]'
 
 export const stunServer = new StunServer();
 
-export const stunServerSlice = mcpRegister.slice("stunServer")
+export const stunServerSlice = mcpserver.metas("stunServer")
   .tool(
     "post",
     "/state",

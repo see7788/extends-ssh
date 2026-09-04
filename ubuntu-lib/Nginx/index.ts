@@ -1,5 +1,6 @@
 import { apt } from "../Apt/index.ts";
-import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
 import { z } from "zod";
@@ -203,7 +204,7 @@ HTTPS
 
 export const nginx = new Nginx();
 
-export const nginxSlice = mcpRegister.slice("nginx")
+export const nginxSlice = mcpserver.metas("nginx")
   .tool(
     "post",
     "/state",

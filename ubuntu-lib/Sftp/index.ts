@@ -1,5 +1,6 @@
 import { isAbsolute, posix } from "node:path";
-import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
 import { remoteRootValidator } from "./store.ts";
@@ -194,7 +195,7 @@ fi
 
 export const sftp = new Sftp();
 
-export const sftpSlice = mcpRegister.slice("sftp")
+export const sftpSlice = mcpserver.metas("sftp")
   .tool(
     "post",
     "/state",

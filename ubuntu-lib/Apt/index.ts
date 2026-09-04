@@ -1,5 +1,6 @@
+import mcpserver from "mcpserver";
 import { ssh } from "../Ssh/index.ts";
-import { emptyValidator, mcpRegister, mutate, type McpJsonContext } from "../mcpBase.ts";
+import { emptyValidator, mutate, type McpJsonContext } from "../mcpBase.ts";
 
 export default class Apt {
   protected readonly ssh = ssh;
@@ -39,7 +40,7 @@ done
 
 export const apt = new Apt();
 
-export const aptSlice = mcpRegister.slice("apt").tool(
+export const aptSlice = mcpserver.metas("apt").tool(
   "post",
   "/ensure",
   emptyValidator,

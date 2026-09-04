@@ -1,4 +1,5 @@
-import { emptyValidator, mcpRegister, read, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, read, type McpJsonContext } from "../mcpBase.ts";
 import store from "../store/index.ts";
 import { z } from "zod";
 
@@ -21,7 +22,7 @@ export default class Public {
 
 export const publicConfig = new Public();
 
-export const publicSlice = mcpRegister.slice("public").tool(
+export const publicSlice = mcpserver.metas("public").tool(
   "post",
   "/state",
   emptyValidator,

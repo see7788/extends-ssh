@@ -3,7 +3,8 @@ import { createRequire, isBuiltin } from "node:module";
 import path from "node:path";
 import { init, parse } from "es-module-lexer";
 import { apt } from "../Apt/index.ts";
-import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import mcpserver from "mcpserver";
+import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { sftp } from "../Sftp/index.ts";
 import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
@@ -201,7 +202,7 @@ done
 
 export const nodejs = new Nodejs();
 
-export const nodejsSlice = mcpRegister.slice("nodejs")
+export const nodejsSlice = mcpserver.metas("nodejs")
   .tool(
     "post",
     "/ensure",
