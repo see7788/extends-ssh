@@ -1,12 +1,13 @@
 import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
-import type Docker from "../Docker/index.ts";
-import type Ssh from "../Ssh/index.ts";
+import { docker } from "../Docker/index.ts";
+import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
 
-export default abstract class StunServer {
-  protected abstract readonly docker: Docker;
-  protected abstract readonly ssh: Ssh;
+export default class StunServer {
+  protected readonly docker = docker;
+  protected readonly ssh = ssh;
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
@@ -118,3 +119,26 @@ ss -lun | grep -Eq ':${state.port}[[:space:]]'
     });
   }
 }
+
+export const stunServer = new StunServer();
+
+export const stunServerSlice = mcpRegister.slice("stunServer")
+  .tool(
+    "post",
+    "/state",
+    emptyValidator,
+    "读取 STUN 服务的公开连接数据。",
+    read,
+    (context: McpJsonContext<{}>) => context.json(stunServer.state),
+  )
+  .tool(
+    "post",
+    "/ensure",
+    emptyValidator,
+    "检查并确保远端 STUN 服务处于可用状态。",
+    mutate,
+    async (context: McpJsonContext<{}>) => {
+      await stunServer.isRemoteRunning();
+      return context.json({ ready: true });
+    },
+  );

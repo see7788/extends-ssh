@@ -1,5 +1,6 @@
 import net from "node:net";
-import type Ssh from "../Ssh/index.ts";
+import { emptyValidator, mcpRegister, mutate, type McpJsonContext } from "../mcpBase.ts";
+import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
 
 const hostValidator = z.string().trim().min(1);
@@ -15,15 +16,15 @@ export const registerValidator = z.object({
   }).strict(),
 }).strict();
 
-type ForwardRegistration = z.infer<typeof registerValidator>;
+export type ForwardRegistration = z.infer<typeof registerValidator>;
 
-type ForwardState = ForwardRegistration;
+export type ForwardState = ForwardRegistration;
 
-type ForwardRunningState = {
+export type ForwardRunningState = {
   remotePort: number;
 };
 
-type RegisteredForward = {
+export type RegisteredForward = {
   readonly state: ForwardState;
   isRunning(): Promise<ForwardRunningState>;
   close(): Promise<void>;
@@ -48,8 +49,8 @@ type ForwardData = {
   sshRevision?: number;
 };
 
-export default abstract class Forward {
-  protected abstract readonly ssh: Ssh;
+export default class Forward {
+  protected readonly ssh = ssh;
   private readonly forwards = new Map<string, ForwardData>();
 
   public register(registrationInput: ForwardRegistration): RegisteredForward {
@@ -170,3 +171,30 @@ export default abstract class Forward {
   }
 
 }
+
+export const forward = new Forward();
+
+export const forwardSlice = mcpRegister.slice("forward")
+  .tool(
+    "post",
+    "/register",
+    registerValidator,
+    "注册并返回持久的 SSH 转发状态。",
+    mutate,
+    async (context: McpJsonContext<ForwardRegistration>) => {
+      const registration = forward.register(context.req.valid("json"));
+      const running = await registration.isRunning();
+      return context.json({ state: registration.state, ...running });
+    },
+  )
+  .tool(
+    "post",
+    "/dispose",
+    emptyValidator,
+    "关闭并释放所有持久的 SSH 转发。",
+    mutate,
+    async (context: McpJsonContext<{}>) => {
+      await forward.dispose();
+      return context.json({ disposed: true });
+    },
+  );

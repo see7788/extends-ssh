@@ -1,6 +1,6 @@
 # extends-ssh
 
-extends-ssh 是一个个人单服务器中心：通过一条 SSH 连接，把 Ubuntu 上的 Node.js、PM2、Nginx、Docker、SFTP、端口转发、PeerJS、STUN 和 WebRTC 信令能力组合成可复用的运行时。Vite 应用只需从 ubuntu-lib/index.ts 取得 ubuntu 单例并组合插件；AI 或运维工具则通过 ubuntu-mcpserver 的切片暴露 MCP 接口。项目默认把运行配置持久化到 ~/.extends-ssh，生产使用前必须替换 ubuntu-lib/Ssh/store.ts 中的连接配置，并且不要提交真实密码。最短的 Vite 接入方式是在具体 application 包中声明 ubuntu-lib 和 Vite，固定 server.port，然后把适用的插件放入 vite.config.ts（Electron 使用 electron.vite.config.ts）。如果由 3005 的 MCP 中心协助接入，先读取 vite.readme 资源，再使用 vite.projectRead、vite.dependenciesInstall 和 vite.importsEnsure 完成识别、依赖与导入检查。
+extends-ssh 是一个个人单服务器中心：通过一条 SSH 连接，把 Ubuntu 上的 Node.js、PM2、Nginx、Docker、SFTP、端口转发、PeerJS、STUN 和 WebRTC 信令能力组合成可复用的运行时。Vite 应用只需从 ubuntu-lib/index.ts 取得 ubuntu 单例并组合插件；AI 或运维工具直接加载 ubuntu-lib/slices.ts 获取同构的 MCP 切片。项目默认把运行配置持久化到 ~/.extends-ssh，生产使用前必须替换 ubuntu-lib/Ssh/store.ts 中的连接配置，并且不要提交真实密码。最短的 Vite 接入方式是在具体 application 包中声明 ubuntu-lib 和 Vite，固定 server.port，然后把适用的插件放入 vite.config.ts（Electron 使用 electron.vite.config.ts）。如果由 3005 的 MCP 中心协助接入，先读取 vite.readme 资源，再使用 vite.projectRead、vite.dependenciesInstall 和 vite.importsEnsure 完成识别、依赖与导入检查。
 
 ## 项目结构
 
@@ -48,6 +48,9 @@ extends-ssh/
 │   │   ├── processRemoteClose(name)      # 停止命名进程
 │   │   └── dispose()                     # 释放 PM2 使用的 SSH 会话
 │   ├── Sftp/index.ts                     # 双向 SFTP 文件能力
+│   │   ├── state                         # remoteRoot
+│   │   ├── remotePath(name)               # 解析 SFTP 管理的远端应用根目录
+│   │   ├── remoteExecute(command)         # 统一执行应用目录相关远端操作
 │   │   ├── remoteUpload()/remoteDirectoryUpload()   # 上传文件或目录
 │   │   ├── remoteDirectoryReplace()     # 原子替换远端目录，失败保留旧目录
 │   │   ├── remoteTextUpload()/remoteTextRead()      # 写入或读取远端文本
@@ -65,7 +68,6 @@ extends-ssh/
 │   │   ├── isRemoteRunning()             # 保障 Coturn、UDP/TCP 防火墙与 STUN 响应
 │   │   └── vitePlugin()                  # 注入 globalThis.WEBRTC_STUN_URL
 │   ├── Vite/index.ts                     # Vite 接入与发布编排
-│   │   ├── readme(uri?)                  # 返回本 README 的 MCP resource 内容
 │   │   ├── projectRead({ projectPath })  # 识别 application profile 与公开表达式
 │   │   ├── dependenciesInstall()        # 补齐 ubuntu-lib、Vite devDependencies 并 pnpm install
 │   │   ├── importsEnsure()               # 为项目内 .ts 文件补齐 ubuntu 导入
@@ -79,33 +81,16 @@ extends-ssh/
 │   ├── store/                            # 内部 Zustand 持久化主仓库，不是业务消费入口
 │   │   ├── index.ts                     # cwdPersist 到 ~/.extends-ssh，并组合配置切片
 │   │   └── type.ts                      # 组合 Store 类型
-│   ├── Public/store.ts                   # domain 与 remoteRoot 默认配置
+│   ├── Public/index.ts                   # 公共域名 class 与 MCP slice
+│   ├── Public/store.ts                   # domain 默认配置
+│   ├── Sftp/store.ts                      # remoteRoot 默认配置
 │   ├── Ssh/store.ts                      # SSH host、port、username、password 配置
 │   ├── Peerjs/store.ts                   # PeerJS 镜像、key、端口与路径
 │   ├── StunServer/store.ts               # STUN 端口（默认 3478）
+│   ├── slices.ts                          # 汇总所有同构 MCP slice
+│   ├── mcpBase.ts                          # MCP 注册的公共类型与注解
 │   └── package.json                      # ubuntu-lib 包边界与 Vite peerDependency
-├── ubuntu-mcpserver/                    # 把 ubuntu-lib 能力注册为 MCP slice
-│   ├── slices.ts                         # 汇总并导出 12 个切片
-│   │   ├── apt、docker、nginx、nodejs  # 远端基础设施与路由
-│   │   ├── peerjs、stunServer           # WebRTC 周边公共服务
-│   │   ├── pm2、sftp、ssh                # 进程、文件与连接运维
-│   │   ├── public                        # 公共域名与远端根目录状态
-│   │   ├── vite                          # Vite README、识别、依赖、导入与地址状态
-│   │   └── webrtcsignaling               # 信令状态与保障
-│   ├── vite/index.ts                     # resource GET /readme；tool POST /projectRead、/dependenciesInstall、/importsEnsure、/state
-│   ├── ssh/index.ts                      # tool POST /config、/state、/connect、/execute、/dispose
-│   ├── sftp/index.ts                     # tool POST /remoteUpload、/remoteTextUpload、/remoteTextRead、/locDownload
-│   ├── nginx/index.ts                    # tool POST /state、/ensure、/proxyRouteIsRunning、/staticRouteIsRunning、/routeClose
-│   ├── nodejs/index.ts                   # tool POST /ensure、/deploymentPackageCreate、/dependenciesRemoteInstall
-│   ├── pm2/index.ts                      # tool POST /state、/refresh、/stop、/restart、/processIsRemoteRunning、/processRemoteClose
-│   ├── apt/index.ts                      # tool POST /ensure
-│   ├── docker/index.ts                   # tool POST /ensure
-│   ├── public/index.ts                   # tool POST /state（不返回 SSH 密码）
-│   ├── peerjs/index.ts                   # tool POST /state、/ensure
-│   ├── stunServer/index.ts               # tool POST /state、/ensure
-│   ├── webrtcsignaling/index.ts          # tool POST /state、/ensure
-│   └── package.json                      # 私有 mcpserver-library 包
-└── pnpm-workspace.yaml                   # 两个本地包及其 workspace 依赖
+└── pnpm-workspace.yaml                   # 本地包及其 workspace 依赖
 ~~~
 
 ## Vite 接入
@@ -218,7 +203,7 @@ webrtcsignaling.isRemoteRunning() 会检查源码报备、远端发布 revision�
 
 ## MCP 与 3005
 
-ubuntu-mcpserver/slices.ts 只负责把库中的单例能力注册成 MCP slice，宿主服务负责挂载路径。ubuntu-mcpserver 当前提供 12 个 slice：apt、docker、nginx、nodejs、peerjs、pm2、public、sftp、ssh、stunServer、vite、webrtcsignaling。
+每个具体切片的 index.ts 都按“验证器 → class → singleton → MCP 注册”的顺序组织。MCP 注册位于对应 class 文件底部，不进入 class；ubuntu-lib/slices.ts 只负责聚合这些同构切片并导出 ubuntu MCP endpoint。当前提供 13 个 slice：apt、docker、forward、nginx、nodejs、peerjs、pm2、public、sftp、ssh、stunServer、vite、webrtcsignaling。
 
 人类查阅入口使用 GET resource；例如 3005 的项目目录会展示 vite.readme 的 GET 路由并返回本 README。工具本身按代码中的 MCP 注册保持 POST，并由宿主按 catalog 前缀挂载：
 
@@ -255,13 +240,12 @@ ubuntu.ssh
 └── nginx.isRemoteRunning()/proxyRouteIsRunning()/staticRouteIsRunning()
 ~~~
 
-这些对象都由 ubuntu-lib/index.ts 组合，外部不需要创建第二个 store 或自行拼接 SSH 会话。业务消费优先读取 state；需要产生远端副作用时，显式调用对应的 isRemoteRunning、发布、路由或进程方法。
+这些对象都由各自模块通过顶部 import 直接消费其他服务实例，再由 ubuntu-lib/index.ts 统一导出；各服务 class 不接收依赖构造参数，外部不需要创建第二个 store、倒腾构造器或自行拼接 SSH 会话。业务消费优先读取 state；需要产生远端副作用时，显式调用对应的 isRemoteRunning、发布、路由或进程方法。
 
 ## 本地验证
 
 ~~~bash
 pnpm --filter ubuntu-lib typecheck
-pnpm --filter ubuntu-mcpserver typecheck
 ~~~
 
-ubuntu-lib 是可被 Vite 应用直接导入的包，ubuntu-mcpserver 是私有 MCP 适配包；两者共享 workspace 中的 mcpserver、zustand-lib 与其他依赖，但主 store 仍只在 ubuntu-lib 内部组合。
+ubuntu-lib 同时提供 Vite 应用运行时与 MCP 切片；主 store 仍只在 ubuntu-lib 内部组合，远程根目录 remoteRoot 只由 SFTP 切片消费。

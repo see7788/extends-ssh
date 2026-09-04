@@ -1,12 +1,13 @@
-import type Docker from "../Docker/index.ts";
-import type Nginx from "../Nginx/index.ts";
-import type Ssh from "../Ssh/index.ts";
+import { docker } from "../Docker/index.ts";
+import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import { nginx } from "../Nginx/index.ts";
+import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
 
-export default abstract class Peerjs {
-  protected abstract readonly docker: Docker;
-  protected abstract readonly nginx: Nginx;
-  protected abstract readonly ssh: Ssh;
+export default class Peerjs {
+  protected readonly docker = docker;
+  protected readonly nginx = nginx;
+  protected readonly ssh = ssh;
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
@@ -88,3 +89,26 @@ exit 1
     return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }
+
+export const peerjs = new Peerjs();
+
+export const peerjsSlice = mcpRegister.slice("peerjs")
+  .tool(
+    "post",
+    "/state",
+    emptyValidator,
+    "读取 PeerJS 的公开连接数据。",
+    read,
+    (context: McpJsonContext<{}>) => context.json(peerjs.state),
+  )
+  .tool(
+    "post",
+    "/ensure",
+    emptyValidator,
+    "检查并确保远端 PeerJS 服务处于可用状态。",
+    mutate,
+    async (context: McpJsonContext<{}>) => {
+      await peerjs.isRemoteRunning();
+      return context.json({ ready: true });
+    },
+  );

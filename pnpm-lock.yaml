@@ -14,18 +14,6 @@ importers:
       '@scalar/hono-api-reference':
         specifier: ^0.11.16
         version: 0.11.16(hono@4.12.30)
-      better-sqlite3:
-        specifier: ^13.0.2
-        version: 13.0.3
-      immer:
-        specifier: 10.2.0
-        version: 10.2.0
-      zustand:
-        specifier: 5.0.13
-        version: 5.0.13(immer@10.2.0)(react@19.2.7)
-      zustand-lib:
-        specifier: workspace:*
-        version: link:../../../extends-zustand/libs/zustand-lib
     devDependencies:
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
@@ -36,9 +24,6 @@ importers:
       '@modelcontextprotocol/server':
         specifier: ^2.0.0
         version: 2.0.0
-      '@types/better-sqlite3':
-        specifier: ^7.6.13
-        version: 7.6.13
       '@types/node':
         specifier: 20.17.17
         version: 20.17.17
@@ -72,6 +57,10 @@ importers:
         version: 5.8.3
 
   ../extends-zustand/libs/zustand-lib:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: 20.19.40
@@ -94,6 +83,9 @@ importers:
       immer:
         specifier: 10.2.0
         version: 10.2.0
+      mcpserver:
+        specifier: workspace:*
+        version: link:../../extends-mcp/libs/mcpserver
       node-ssh:
         specifier: ^13.2.1
         version: 13.2.1
@@ -116,27 +108,6 @@ importers:
       vite:
         specifier: ^6.3.6
         version: 6.3.6(@types/node@20.19.43)(tsx@4.23.5)
-
-  ubuntu-mcpserver:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.20.1
-        version: 22.20.1
-      hono:
-        specifier: 4.12.30
-        version: 4.12.30
-      mcpserver:
-        specifier: workspace:*
-        version: link:../../extends-mcp/libs/mcpserver
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      ubuntu-lib:
-        specifier: workspace:*
-        version: link:../ubuntu-lib
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
 
 packages:
 
@@ -634,9 +605,6 @@ packages:
     resolution: {integrity: sha512-j3s9XPv8Wo1EG5/naBi4XGF0uXYQ2A3QZNI0NKWgCMxRHVrDJGlZEYymcHDHY7fquRm73P8U3c8xqJqB5yad6w==}
     engines: {node: '>=20'}
 
-  '@types/better-sqlite3@7.6.13':
-    resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
-
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
@@ -649,18 +617,11 @@ packages:
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
 
-  '@types/node@22.20.1':
-    resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
-
   asn1@0.2.6:
     resolution: {integrity: sha512-ix/FxPn0MDjeyJ7i/yoHGFt/EX6LyNbxSEhPPXODPL+KB0VPk86UYfL0lMdy+KCnv+fmvIzySwaK5COwqVbWTQ==}
 
   bcrypt-pbkdf@1.0.2:
     resolution: {integrity: sha512-qeFIXtP4MSoi6NLqO12WfqARWWuCKi2Rn/9hJLEmtB5yTNr9DqFWkJRCf2qShWzPeAMRnOgCrq0sg/KLv5ES9w==}
-
-  better-sqlite3@13.0.3:
-    resolution: {integrity: sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==}
-    engines: {node: '>=22'}
 
   buildcheck@0.0.7:
     resolution: {integrity: sha512-lHblz4ahamxpTmnsk+MNTRWsjYKv965MwOrSJyeD588rR3Jcu7swE+0wN5F+PbL5cjgu/9ObkhfzEPuofEMwLA==}
@@ -742,10 +703,6 @@ packages:
     resolution: {integrity: sha512-kVrnsrJqMR8+oLJnGEmSWw9BivK5mt7H3FZatVRjrc5wGqFYuBxX1yG7+A7Gi5AefkX6t/oCkizcQgpu0cY1dQ==}
     engines: {node: ^18 || >=20}
     hasBin: true
-
-  node-addon-api@8.9.2:
-    resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
-    engines: {node: ^18 || ^20 || >= 21}
 
   node-ssh@13.2.1:
     resolution: {integrity: sha512-rfl4GWMygQfzlExPkQ2LWyya5n2jOBm5vhEnup+4mdw7tQhNpJWbP5ldr09Jfj93k5SfY5lxcn8od5qrQ/6mBg==}
@@ -1199,10 +1156,6 @@ snapshots:
 
   '@scalar/validation@0.6.3': {}
 
-  '@types/better-sqlite3@7.6.13':
-    dependencies:
-      '@types/node': 20.19.40
-
   '@types/estree@1.0.9': {}
 
   '@types/node@20.17.17':
@@ -1217,10 +1170,6 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@types/node@22.20.1':
-    dependencies:
-      undici-types: 6.21.0
-
   asn1@0.2.6:
     dependencies:
       safer-buffer: 2.1.2
@@ -1228,10 +1177,6 @@ snapshots:
   bcrypt-pbkdf@1.0.2:
     dependencies:
       tweetnacl: 0.14.5
-
-  better-sqlite3@13.0.3:
-    dependencies:
-      node-addon-api: 8.9.2
 
   buildcheck@0.0.7:
     optional: true
@@ -1342,8 +1287,6 @@ snapshots:
   nanoid@3.3.15: {}
 
   nanoid@5.1.16: {}
-
-  node-addon-api@8.9.2: {}
 
   node-ssh@13.2.1:
     dependencies:

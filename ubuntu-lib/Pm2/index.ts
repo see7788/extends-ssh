@@ -1,5 +1,6 @@
-import type Nodejs from "../Nodejs/index.ts";
-import type Ssh from "../Ssh/index.ts";
+import { nodejs } from "../Nodejs/index.ts";
+import { emptyValidator, mcpRegister, mutate, read, remoteRead, type McpJsonContext } from "../mcpBase.ts";
+import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
 
 export const idValidator = z.object({
@@ -19,9 +20,9 @@ export const processRemoteCloseValidator = z.object({
   name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
 }).strict();
 
-type IdInput = z.infer<typeof idValidator>;
-type RemoteProcess = z.infer<typeof processIsRemoteRunningValidator>;
-type ProcessRemoteClose = z.infer<typeof processRemoteCloseValidator>;
+export type IdInput = z.infer<typeof idValidator>;
+export type RemoteProcess = z.infer<typeof processIsRemoteRunningValidator>;
+export type ProcessRemoteClose = z.infer<typeof processRemoteCloseValidator>;
 
 type Pm2ProcessState = {
   id: number;
@@ -47,9 +48,9 @@ type Pm2JsonProcess = {
   };
 };
 
-export default abstract class Pm2 {
-  protected abstract readonly nodejs: Nodejs;
-  protected abstract readonly ssh: Ssh;
+export default class Pm2 {
+  protected readonly nodejs = nodejs;
+  protected readonly ssh = ssh;
   private remoteRunningPromise?: Promise<void>;
 
   public readonly state: {
@@ -210,3 +211,61 @@ pm2 --version >/dev/null
     return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }
+
+export const pm2 = new Pm2();
+
+export const pm2Slice = mcpRegister.slice("pm2")
+  .tool(
+    "post",
+    "/state",
+    emptyValidator,
+    "读取当前缓存的 PM2 进程状态。",
+    read,
+    (context: McpJsonContext<{}>) => context.json(pm2.state),
+  )
+  .tool(
+    "post",
+    "/refresh",
+    emptyValidator,
+    "从远端重新读取 PM2 进程并刷新状态。",
+    remoteRead,
+    async (context: McpJsonContext<{}>) => context.json(await pm2.refresh()),
+  )
+  .tool(
+    "post",
+    "/stop",
+    idValidator,
+    "按 PM2 进程编号停止一个远端进程。",
+    mutate,
+    async (context: McpJsonContext<IdInput>) => context.json(await pm2.stop(context.req.valid("json").id)),
+  )
+  .tool(
+    "post",
+    "/restart",
+    idValidator,
+    "按 PM2 进程编号重启一个远端进程。",
+    mutate,
+    async (context: McpJsonContext<IdInput>) => context.json(await pm2.restart(context.req.valid("json").id)),
+  )
+  .tool(
+    "post",
+    "/processIsRemoteRunning",
+    processIsRemoteRunningValidator,
+    "按名称启动 PM2 进程，并验证目标端口已可用。",
+    mutate,
+    async (context: McpJsonContext<RemoteProcess>) => {
+      await pm2.processIsRemoteRunning(context.req.valid("json"));
+      return context.json({ started: true });
+    },
+  )
+  .tool(
+    "post",
+    "/processRemoteClose",
+    processRemoteCloseValidator,
+    "按名称停止一个远端 PM2 进程。",
+    mutate,
+    async (context: McpJsonContext<ProcessRemoteClose>) => {
+      await pm2.processRemoteClose(context.req.valid("json").name);
+      return context.json({ stopped: true });
+    },
+  );

@@ -1,7 +1,8 @@
-import type Ssh from "../Ssh/index.ts";
+import { ssh } from "../Ssh/index.ts";
+import { emptyValidator, mcpRegister, mutate, type McpJsonContext } from "../mcpBase.ts";
 
-export default abstract class Apt {
-  protected abstract readonly ssh: Ssh;
+export default class Apt {
+  protected readonly ssh = ssh;
   private remoteRunningPromise?: Promise<void>;
 
   public isRemoteRunning(): Promise<void> {
@@ -35,3 +36,17 @@ done
 `);
   }
 }
+
+export const apt = new Apt();
+
+export const aptSlice = mcpRegister.slice("apt").tool(
+  "post",
+  "/ensure",
+  emptyValidator,
+  "检查并补齐远端系统所需的 Apt 基础组件。",
+  mutate,
+  async (context: McpJsonContext<{}>) => {
+    await apt.isRemoteRunning();
+    return context.json({ ready: true });
+  },
+);

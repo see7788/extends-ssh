@@ -1,5 +1,6 @@
-import type Apt from "../Apt/index.ts";
-import type Ssh from "../Ssh/index.ts";
+import { apt } from "../Apt/index.ts";
+import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
 import { z } from "zod";
 
@@ -31,13 +32,13 @@ export const routeCloseValidator = z.object({
   hostname: hostnameValidator,
 }).strict();
 
-type ProxyRoute = z.infer<typeof proxyRouteIsRunningValidator>;
-type StaticRoute = z.infer<typeof staticRouteIsRunningValidator>;
-type Route = z.infer<typeof routeCloseValidator>;
+export type ProxyRoute = z.infer<typeof proxyRouteIsRunningValidator>;
+export type StaticRoute = z.infer<typeof staticRouteIsRunningValidator>;
+export type Route = z.infer<typeof routeCloseValidator>;
 
-export default abstract class Nginx {
-  protected abstract readonly apt: Apt;
-  protected abstract readonly ssh: Ssh;
+export default class Nginx {
+  protected readonly apt = apt;
+  protected readonly ssh = ssh;
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
@@ -199,3 +200,59 @@ HTTPS
     return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }
+
+export const nginx = new Nginx();
+
+export const nginxSlice = mcpRegister.slice("nginx")
+  .tool(
+    "post",
+    "/state",
+    emptyValidator,
+    "读取 Nginx 的公开访问状态。",
+    read,
+    (context: McpJsonContext<{}>) => context.json(nginx.state),
+  )
+  .tool(
+    "post",
+    "/ensure",
+    emptyValidator,
+    "检查远端 Nginx，缺少时完成安装与基础配置。",
+    mutate,
+    async (context: McpJsonContext<{}>) => {
+      await nginx.isRemoteRunning();
+      return context.json({ ready: true });
+    },
+  )
+  .tool(
+    "post",
+    "/proxyRouteIsRunning",
+    proxyRouteIsRunningValidator,
+    "写入并启用指定域名、路径与目标端口的 Nginx 反向代理路由。",
+    mutate,
+    async (context: McpJsonContext<ProxyRoute>) => {
+      await nginx.proxyRouteIsRunning(context.req.valid("json"));
+      return context.json({ configured: true });
+    },
+  )
+  .tool(
+    "post",
+    "/staticRouteIsRunning",
+    staticRouteIsRunningValidator,
+    "写入并启用指定域名、路径与静态目录的 Nginx 静态资源路由。",
+    mutate,
+    async (context: McpJsonContext<StaticRoute>) => {
+      await nginx.staticRouteIsRunning(context.req.valid("json"));
+      return context.json({ configured: true });
+    },
+  )
+  .tool(
+    "post",
+    "/routeClose",
+    routeCloseValidator,
+    "关闭并移除指定名称与域名的 Nginx 路由。",
+    mutate,
+    async (context: McpJsonContext<Route>) => {
+      await nginx.routeClose(context.req.valid("json"));
+      return context.json({ closed: true });
+    },
+  );

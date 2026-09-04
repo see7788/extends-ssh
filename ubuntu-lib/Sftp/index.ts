@@ -1,11 +1,25 @@
 import { isAbsolute, posix } from "node:path";
-import type Ssh from "../Ssh/index.ts";
+import { emptyValidator, mcpRegister, mutate, read, type McpJsonContext } from "../mcpBase.ts";
+import { ssh } from "../Ssh/index.ts";
+import store from "../store/index.ts";
+import { remoteRootValidator } from "./store.ts";
 import { z } from "zod";
 
 const localPathValidator = z.string().trim().min(1).refine(isAbsolute, {
   message: "localPath 必须是绝对路径",
 });
 const remotePathValidator = z.string().trim().min(1);
+const remotePathNameValidator = z.string().trim().regex(
+  /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/,
+  { message: "远端目录名称无效" },
+);
+
+export const remotePathResolveValidator = z.object({
+  name: remotePathNameValidator,
+}).strict();
+export const remoteExecuteValidator = z.object({
+  command: z.string().trim().min(1),
+}).strict();
 
 export const remoteUploadValidator = z.object({
   localPath: localPathValidator,
@@ -31,15 +45,37 @@ export const locDownloadValidator = z.object({
   localPath: localPathValidator,
 }).strict();
 
-type RemoteUpload = z.infer<typeof remoteUploadValidator>;
-type RemoteDirectoryUpload = z.infer<typeof remoteDirectoryUploadValidator>;
-type RemoteDirectoryReplace = z.infer<typeof remoteDirectoryReplaceValidator>;
-type RemoteTextUpload = z.infer<typeof remoteTextUploadValidator>;
-type RemoteTextRead = z.infer<typeof remoteTextReadValidator>;
-type LocDownload = z.infer<typeof locDownloadValidator>;
+export type RemoteUpload = z.infer<typeof remoteUploadValidator>;
+export type RemoteDirectoryUpload = z.infer<typeof remoteDirectoryUploadValidator>;
+export type RemoteDirectoryReplace = z.infer<typeof remoteDirectoryReplaceValidator>;
+export type RemoteTextUpload = z.infer<typeof remoteTextUploadValidator>;
+export type RemoteTextRead = z.infer<typeof remoteTextReadValidator>;
+export type LocDownload = z.infer<typeof locDownloadValidator>;
+export type RemotePathResolve = z.infer<typeof remotePathResolveValidator>;
+export type RemoteExecute = z.infer<typeof remoteExecuteValidator>;
 
-export default abstract class Sftp {
-  protected abstract readonly ssh: Ssh;
+export default class Sftp {
+  protected readonly ssh = ssh;
+
+  public get remoteRoot(): string {
+    return remoteRootValidator.parse(store.getState().sftp.remoteRoot);
+  }
+
+  public get state() {
+    return { remoteRoot: this.remoteRoot };
+  }
+
+  /** 根据持久化根目录解析一个应用目录。 */
+  public remotePath(name: RemotePathResolve["name"]): string {
+    const input = remotePathResolveValidator.parse({ name });
+    return posix.join(this.remoteRoot, input.name);
+  }
+
+  /** 应用目录相关的远端命令统一从 SFTP 文件边界执行。 */
+  public remoteExecute(command: RemoteExecute["command"]) {
+    const input = remoteExecuteValidator.parse({ command });
+    return this.ssh.execute(input.command);
+  }
 
   /** 把本地文件上传到远端。 */
   public async remoteUpload(
@@ -155,3 +191,71 @@ fi
     return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }
+
+export const sftp = new Sftp();
+
+export const sftpSlice = mcpRegister.slice("sftp")
+  .tool(
+    "post",
+    "/state",
+    emptyValidator,
+    "读取 SFTP 远程根目录。",
+    read,
+    (context: McpJsonContext<{}>) => context.json(sftp.state),
+  )
+  .tool(
+    "post",
+    "/remotePath",
+    remotePathResolveValidator,
+    "解析 SFTP 持久化的远程应用目录。",
+    read,
+    (context: McpJsonContext<RemotePathResolve>) => context.json({
+      remotePath: sftp.remotePath(context.req.valid("json").name),
+    }),
+  )
+  .tool(
+    "post",
+    "/remoteUpload",
+    remoteUploadValidator,
+    "通过 SFTP 把本地文件上传到指定的远程路径。",
+    mutate,
+    async (context: McpJsonContext<RemoteUpload>) => {
+      const { localPath, remotePath } = context.req.valid("json");
+      await sftp.remoteUpload(localPath, remotePath);
+      return context.json({ uploaded: true });
+    },
+  )
+  .tool(
+    "post",
+    "/remoteTextUpload",
+    remoteTextUploadValidator,
+    "通过 SFTP 把文本写入指定的远程文件。",
+    mutate,
+    async (context: McpJsonContext<RemoteTextUpload>) => {
+      const { text, remotePath } = context.req.valid("json");
+      await sftp.remoteTextUpload(text, remotePath);
+      return context.json({ uploaded: true });
+    },
+  )
+  .tool(
+    "post",
+    "/remoteTextRead",
+    remoteTextReadValidator,
+    "通过 SFTP 读取指定的远程文本文件。",
+    read,
+    async (context: McpJsonContext<RemoteTextRead>) => context.json(
+      await sftp.remoteTextRead(context.req.valid("json").remotePath),
+    ),
+  )
+  .tool(
+    "post",
+    "/locDownload",
+    locDownloadValidator,
+    "通过 SFTP 把指定的远程文件下载到本地路径。",
+    mutate,
+    async (context: McpJsonContext<LocDownload>) => {
+      const { remotePath, localPath } = context.req.valid("json");
+      await sftp.locDownload(remotePath, localPath);
+      return context.json({ downloaded: true });
+    },
+  );

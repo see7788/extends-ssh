@@ -1,9 +1,10 @@
-import type Apt from "../Apt/index.ts";
-import type Ssh from "../Ssh/index.ts";
+import { apt } from "../Apt/index.ts";
+import { emptyValidator, mcpRegister, mutate, type McpJsonContext } from "../mcpBase.ts";
+import { ssh } from "../Ssh/index.ts";
 
-export default abstract class Docker {
-  protected abstract readonly apt: Apt;
-  protected abstract readonly ssh: Ssh;
+export default class Docker {
+  protected readonly apt = apt;
+  protected readonly ssh = ssh;
   private remoteRunningPromise?: Promise<void>;
 
   public isRemoteRunning(): Promise<void> {
@@ -32,3 +33,17 @@ docker info >/dev/null
 `);
   }
 }
+
+export const docker = new Docker();
+
+export const dockerSlice = mcpRegister.slice("docker").tool(
+  "post",
+  "/ensure",
+  emptyValidator,
+  "检查远端 Docker，缺少时完成安装并验证可用性。",
+  mutate,
+  async (context: McpJsonContext<{}>) => {
+    await docker.isRemoteRunning();
+    return context.json({ ready: true });
+  },
+);
