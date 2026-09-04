@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import mcpserver from "mcpserver";
 import type { Plugin, ResolvedConfig } from "vite";
 import { z } from "zod";
 import type Forward from "../Forward/index.ts";
@@ -43,11 +44,6 @@ const projectPackageValidator = z.object({
   peerDependencies: dependencyMapValidator.optional(),
   workspaces: z.unknown().optional(),
 }).passthrough();
-
-type ProjectReadInput = z.infer<typeof projectReadValidator>;
-type DependenciesInstallInput = z.infer<typeof dependenciesInstallValidator>;
-type ImportsEnsureInput = z.infer<typeof importsEnsureValidator>;
-type StateInput = z.infer<typeof stateValidator>;
 
 const projectProfiles = ["node", "hono", "electron-vite"] as const;
 type ProjectProfile = typeof projectProfiles[number];
@@ -181,7 +177,6 @@ const projectProfileDetect = (
   throw new Error(`Ubuntu Vite 工具不支持该 tpltype：${String(tpltype)}`);
 };
 
-type RegisteredForward = ReturnType<Forward["register"]>;
 export default abstract class Vite {
   protected abstract readonly forward: Forward;
   protected abstract readonly nginx: Nginx;
@@ -262,7 +257,7 @@ export default abstract class Vite {
     };
   }
 
-  public async projectRead(input: ProjectReadInput) {
+  public async projectRead(input: z.infer<typeof projectReadValidator>) {
     const value = projectReadValidator.parse(input);
     const canonicalPath = await canonicalProjectPath(value.projectPath);
     const packagePath = path.join(canonicalPath, "package.json");
@@ -346,7 +341,7 @@ export default abstract class Vite {
     };
   }
 
-  public async dependenciesInstall(input: DependenciesInstallInput) {
+  public async dependenciesInstall(input: z.infer<typeof dependenciesInstallValidator>) {
     try {
       const value = dependenciesInstallValidator.parse(input);
       const projectPath = await canonicalProjectPath(value.projectPath);
@@ -385,7 +380,7 @@ export default abstract class Vite {
     }
   }
 
-  public async importsEnsure(input: ImportsEnsureInput) {
+  public async importsEnsure(input: z.infer<typeof importsEnsureValidator>) {
     try {
       const value = importsEnsureValidator.parse(input);
       const projectPath = await canonicalProjectPath(value.projectPath);
@@ -414,7 +409,7 @@ export default abstract class Vite {
     }
   }
 
-  public state(port: StateInput["port"]) {
+  public state(port: z.infer<typeof stateValidator>["port"]) {
     const input = stateValidator.parse({ port });
     const target = this.targetResolve(input.port);
     return { host: target.hostname, port: 443 as const, secure: true as const };
@@ -423,7 +418,7 @@ export default abstract class Vite {
   public readonly dev = {
     forward: (): Plugin => {
       let configuredPort: number | undefined;
-      let registeredForward: RegisteredForward | undefined;
+      let registeredForward: ReturnType<Forward["register"]> | undefined;
       let resolvedConfig: ResolvedConfig | undefined;
       let resourcesClosePromise: Promise<void> | undefined;
       let startPromise: Promise<void> | undefined;
@@ -670,6 +665,85 @@ export default abstract class Vite {
     },
   };
 }
+
+const mcpRead = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
+
+export const viteSlice = (vite: Vite) => mcpserver.register.slice("vite")
+  .resource(
+    "get",
+    "/readme",
+    readmeUri,
+    {
+      title: "项目 README",
+      description: "读取 Ubuntu Vite 项目接入说明。",
+      mimeType: "text/markdown",
+    },
+    async context => context.json(
+      await vite.readme(context.req.query("uri")),
+    ),
+  )
+  .tool(
+    "post",
+    "/projectRead",
+    projectReadValidator,
+    "识别 Vite 项目类型并返回 Ubuntu 接入信息。",
+    mcpRead,
+    async context => context.json(
+      await vite.projectRead(context.req.valid("json")),
+    ),
+  )
+  .tool(
+    "post",
+    "/dependenciesInstall",
+    dependenciesInstallValidator,
+    "补齐 Ubuntu Vite 依赖并执行 pnpm install。",
+    {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    async context => {
+      const result = await vite.dependenciesInstall(context.req.valid("json"));
+      return result.status === 400
+        ? context.json(result.body, 400)
+        : context.json(result.body);
+    },
+  )
+  .tool(
+    "post",
+    "/importsEnsure",
+    importsEnsureValidator,
+    "向项目 TypeScript 文件补充 Ubuntu 导入。",
+    {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    async context => {
+      const result = await vite.importsEnsure(context.req.valid("json"));
+      return result.status === 400
+        ? context.json(result.body, 400)
+        : context.json(result.body);
+    },
+  )
+  .tool(
+    "post",
+    "/state",
+    stateValidator,
+    "根据 Vite 端口返回公开 HTTPS 访问状态。",
+    mcpRead,
+    context => context.json(
+      vite.state(context.req.valid("json").port),
+    ),
+  );
+
 export {
   dependenciesInstallValidator,
   importsEnsureValidator,
