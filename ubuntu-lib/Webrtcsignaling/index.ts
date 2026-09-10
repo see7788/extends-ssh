@@ -305,7 +305,7 @@ export const webrtcsignalingSlice = mcpserver.metas("webrtcsignaling")
     emptyValidator,
     "读取 WebRTC 信令服务的公开连接数据。",
     read,
-    (context: McpJsonContext<{}>) => context.json(webrtcsignaling.state),
+    (context) => context.json(webrtcsignaling.state),
   )
   .tool(
     "post",
@@ -313,7 +313,7 @@ export const webrtcsignalingSlice = mcpserver.metas("webrtcsignaling")
     emptyValidator,
     "检查并确保远端 WebRTC 信令服务处于可用状态。",
     mutate,
-    async (context: McpJsonContext<{}>) => {
+    async (context) => {
       await webrtcsignaling.isRemoteRunning();
       return context.json({ ready: true });
     },
