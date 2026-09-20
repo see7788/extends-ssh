@@ -1,7 +1,7 @@
 import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 import { z } from "zod";
 
-export const peerjsValidator = z.object({
+const peerjsValidator = z.object({
   peerjs: z.object({
     image: z.literal("peerjs/peerjs-server:1.0.2"),
     key: z.literal("peerjs"),

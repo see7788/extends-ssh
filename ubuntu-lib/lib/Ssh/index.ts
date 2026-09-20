@@ -1,4 +1,4 @@
-import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
+﻿import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
 import mcpserver from "mcpserver";
 import { z } from "zod";
 import store from "../store/index.ts";
@@ -27,7 +27,7 @@ class Ssh implements Base {
     return this.connection.revision;
   }
 
-  public async isRemoteRunning(): Promise<void> {
+  public async remoteIsRunning(): Promise<void> {
     if (this.runningPromise) return this.runningPromise;
     const runningPromise = this.runningEnsure().finally(() => {
       if (this.runningPromise === runningPromise) {
@@ -43,6 +43,7 @@ class Ssh implements Base {
       try {
         const execution = await this.client.execCommand("true");
         if (execution.code === 0) return;
+        this.client.dispose();
       } catch {
         this.client.dispose();
       }
@@ -62,7 +63,7 @@ class Ssh implements Base {
 
   public async execute(command: z.infer<typeof sshExecuteValidator>["command"]): Promise<SSHExecCommandResponse> {
     const input = sshExecuteValidator.parse({ command });
-    await this.isRemoteRunning();
+    await this.remoteIsRunning();
     const execution = await this.client.execCommand(input.command);
     if (execution.code !== 0) {
       throw new Error(
@@ -111,7 +112,7 @@ export default mcpserver.metas("/ssh")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async input => {
-      await ssh.isRemoteRunning();
+      await ssh.remoteIsRunning();
       const { host, port, username } = ssh.state;
       return { host, port, username, revision: ssh.revision };
     },
@@ -135,3 +136,9 @@ export default mcpserver.metas("/ssh")
       return { disposed: true };
     },
   });
+
+
+
+
+
+

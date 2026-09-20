@@ -1,11 +1,11 @@
-import dgram from "node:dgram";
+﻿import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
 import { docker } from "../Docker/index.ts";
 import mcpserver from "mcpserver";
 import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
-
 import type Base from "../Public/Base.ts";
+
 
 class StunServer implements Base {
   private remoteRunningPromise?: Promise<void>;
@@ -15,6 +15,9 @@ class StunServer implements Base {
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
       throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
     }
+    if (stunServer.port === ssh.port || stunServer.port === 80 || stunServer.port === 443) {
+      throw new Error(`STUN 端口与固定服务端口冲突: ${String(stunServer.port)}`);
+    }
     return {
       host: ssh.host,
       port: stunServer.port,
@@ -22,12 +25,16 @@ class StunServer implements Base {
     };
   }
 
-  public isRemoteRunning(): Promise<void> {
+  public remoteIsRunning(): Promise<void> {
     if (this.remoteRunningPromise) return this.remoteRunningPromise;
 
     const executionPromise = (async () => {
       const state = this.state;
-      await docker.isRemoteRunning();
+      await docker.remoteIsRunning();
+      const occupancy = await ssh.execute(`if docker inspect coturn >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' coturn)" = true ]; then printf own; elif ss -ltnH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }' || ss -lunH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }'; then printf occupied; else printf free; fi`);
+      if (occupancy.stdout.trim() === "occupied") {
+        throw new Error(`STUN 端口已被远程服务占用: ${String(state.port)}`);
+      }
       await ssh.execute(`
 set -e
 docker info >/dev/null
@@ -138,7 +145,12 @@ export default mcpserver.metas("/stunServer")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async input => {
-      await stunServer.isRemoteRunning();
+      await stunServer.remoteIsRunning();
       return { ready: true };
     },
   });
+
+
+
+
+

@@ -5,7 +5,6 @@ import { nginx } from "./Nginx/index.ts";
 import { nodejs } from "./Nodejs/index.ts";
 import { peerjs } from "./Peerjs/index.ts";
 import { pm2 } from "./Pm2/index.ts";
-import { publicConfig } from "./Public/index.ts";
 import { sftp } from "./Sftp/index.ts";
 import { ssh } from "./Ssh/index.ts";
 import { stunServer } from "./StunServer/index.ts";
@@ -39,9 +38,6 @@ class Ubuntu {
   public readonly webrtcsignaling = webrtcsignaling;
 
   /** 交付公共域名配置。 */
-  public get public() {
-    return publicConfig.state;
-  }
 }
 
 export default new Ubuntu();

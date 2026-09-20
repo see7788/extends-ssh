@@ -13,29 +13,26 @@ import {
 } from "node:path";
 import { nginx } from "../Nginx/index.ts";
 import mcpserver from "mcpserver";
-import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { pm2 } from "../Pm2/index.ts";
 import { sftp } from "../Sftp/index.ts";
+import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
 import vitePlugin from "./vitePlugin.ts";
 import { z } from "zod";
 
-export const vitePluginValidator = z.union([
+const vitePluginValidator = z.union([
   z.object({ entry: z.string().trim().min(1) }).strict(),
   z.object({ projectName: z.string().trim().min(1) }).strict(),
 ]);
 
-export type VitePluginOptions = z.infer<typeof vitePluginValidator>;
 
-export default class Webrtcsignaling {
-  protected readonly nginx = nginx;
-  protected readonly pm2 = pm2;
-  protected readonly sftp = sftp;
+import type Base from "../Public/Base.ts";
+
+class Webrtcsignaling implements Base {
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
-    const { public: publicState, webrtcsignaling } = store.getState();
-    const domain = publicState.domain.trim().toLowerCase();
+    const { domain, webrtcsignaling } = store.getState();
     return {
       host: `webrtc.${domain}`,
       port: 443 as const,
@@ -55,7 +52,7 @@ export default class Webrtcsignaling {
     return remoteRunningPromise;
   }
 
-  public vitePlugin(options: VitePluginOptions) {
+  public vitePlugin(options: z.infer<typeof vitePluginValidator>) {
     return vitePlugin(this, vitePluginValidator.parse(options));
   }
 
@@ -108,7 +105,7 @@ export default class Webrtcsignaling {
       ),
     }, null, 2)}\n`;
 
-    const remotePath = this.sftp.remotePath(serviceName);
+    const remotePath = sftp.remotePath({ name: serviceName });
     const environment = {
       WS_NO_BUFFER_UTIL: "1",
       WS_NO_UTF_8_VALIDATE: "1",
@@ -150,8 +147,8 @@ export default class Webrtcsignaling {
     const current = `${remotePath}/current`;
     const next = `${remotePath}/.current-next`;
 
-    await this.pm2.isRemoteRunning();
-    const readiness = await this.sftp.remoteExecute(`
+    await pm2.isRemoteRunning();
+    const readiness = await ssh.execute(`
 set -e
 CURRENT_REVISION="$(cat ${this.shell(`${current}/.ubuntu-service-revision`)} 2>/dev/null || true)"
 PID="$(pm2 pid ${this.shell(serviceName)} 2>/dev/null || true)"
@@ -165,13 +162,17 @@ else
 fi
 `);
     if (readiness.stdout.trim() !== "ready") {
-      await this.sftp.remoteExecute(`
+      await ssh.execute(`
 set -e
 mkdir -p ${this.shell(`${remotePath}/releases`)}
 rm -rf ${this.shell(incoming)}
 mkdir -p ${this.shell(incoming)}
 `);
-      await this.sftp.remoteDirectoryUpload(path, incoming, sourceIncluded);
+      await sftp.remoteDirectoryUpload({
+        localPath: path,
+        remotePath: incoming,
+        validate: sourceIncluded,
+      });
 
       const environmentCommand = Object.entries(environment)
         .sort(([left], [right]) => left.localeCompare(right))
@@ -184,7 +185,7 @@ mkdir -p ${this.shell(incoming)}
         `exec env ${environmentCommand} ./node_modules/.bin/tsx ${this.shell(entry)}`,
         "",
       ].join("\n");
-      await this.sftp.remoteExecute(`
+      await ssh.execute(`
 set -e
 if [ -d ${this.shell(release)} ]; then
   rm -rf ${this.shell(incoming)}
@@ -199,7 +200,7 @@ else
   mv ${this.shell(incoming)} ${this.shell(release)}
 fi
 `);
-      await this.sftp.remoteExecute(`
+      await ssh.execute(`
 set -e
 PREVIOUS="$(readlink -f ${this.shell(current)} 2>/dev/null || true)"
 rollback() {
@@ -238,7 +239,7 @@ trap - ERR
     }
 
     const state = this.state;
-    await this.nginx.proxyRouteIsRunning({
+    await nginx.proxyRouteIsRunning({
       name: serviceName,
       hostname: state.host,
       pathname: state.path,
@@ -298,23 +299,23 @@ trap - ERR
 
 export const webrtcsignaling = new Webrtcsignaling();
 
-export const webrtcsignalingSlice = mcpserver.metas("webrtcsignaling")
-  .tool(
-    "post",
-    "/state",
-    emptyValidator,
-    "读取 WebRTC 信令服务的公开连接数据。",
-    read,
-    (context) => context.json(webrtcsignaling.state),
-  )
-  .tool(
-    "post",
-    "/ensure",
-    emptyValidator,
-    "检查并确保远端 WebRTC 信令服务处于可用状态。",
-    mutate,
-    async (context) => {
+export default mcpserver.metas("/webrtcsignaling")
+  .add({
+    protocol: "tool",
+    path: "/state",
+    description: "读取 WebRTC 信令服务的公开连接数据。",
+    schema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    handler: input => webrtcsignaling.state,
+  })
+  .add({
+    protocol: "tool",
+    path: "/ensure",
+    description: "检查并确保远端 WebRTC 信令服务处于可用状态。",
+    schema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
       await webrtcsignaling.isRemoteRunning();
-      return context.json({ ready: true });
+      return { ready: true };
     },
-  );
+  });

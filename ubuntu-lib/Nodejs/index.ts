@@ -4,7 +4,6 @@ import path from "node:path";
 import { init, parse } from "es-module-lexer";
 import { apt } from "../Apt/index.ts";
 import mcpserver from "mcpserver";
-import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { sftp } from "../Sftp/index.ts";
 import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
@@ -14,21 +13,18 @@ const localPathValidator = z.string().trim().min(1).refine(path.isAbsolute, {
 });
 const remotePathValidator = z.string().trim().min(1);
 
-export const deploymentPackageCreateValidator = z.object({
+const deploymentPackageCreateValidator = z.object({
   buildPath: localPathValidator,
   projectPath: localPathValidator,
 }).strict();
-export const dependenciesRemoteInstallValidator = z.object({
+const dependenciesRemoteInstallValidator = z.object({
   projectPath: remotePathValidator,
 }).strict();
 
-export type DeploymentPackageCreate = z.infer<typeof deploymentPackageCreateValidator>;
-export type DependenciesRemoteInstall = z.infer<typeof dependenciesRemoteInstallValidator>;
 
-export default class Nodejs {
-  protected readonly apt = apt;
-  protected readonly sftp = sftp;
-  protected readonly ssh = ssh;
+import type Base from "../Public/Base.ts";
+
+class Nodejs implements Base {
   private readonly configuration = {
     version: "22.23.2",
     architecture: "linux-x64",
@@ -49,11 +45,10 @@ export default class Nodejs {
 
   /** 根据 Node 构建产物生成远端安装使用的 package.json。 */
   public async deploymentPackageCreate(
-    buildPath: DeploymentPackageCreate["buildPath"],
-    projectPath: DeploymentPackageCreate["projectPath"],
+    input: z.infer<typeof deploymentPackageCreateValidator>,
   ): Promise<{ content: string; name: string }> {
-    const input = deploymentPackageCreateValidator.parse({ buildPath, projectPath });
-    const packagePath = path.resolve(input.projectPath, "package.json");
+    const value = deploymentPackageCreateValidator.parse(input);
+    const packagePath = path.resolve(value.projectPath, "package.json");
     if (!existsSync(packagePath)) throw new Error(`Node 项目 package.json 不存在: ${packagePath}`);
     const sourcePackage = JSON.parse(await fs.promises.readFile(packagePath, "utf8")) as {
       name?: string;
@@ -68,7 +63,7 @@ export default class Nodejs {
     const dependencies: Record<string, string> = {};
     const require = createRequire(packagePath);
     const packageResolve = (name: string): string | undefined => {
-      let searchPath = input.projectPath;
+      let searchPath = value.projectPath;
       while (true) {
         const candidate = path.join(searchPath, "node_modules", name, "package.json");
         if (existsSync(candidate)) return candidate;
@@ -92,9 +87,9 @@ export default class Nodejs {
     };
     const externalPackages = new Set<string>();
     await init;
-    const files = await fs.promises.readdir(input.buildPath, { recursive: true });
+    const files = await fs.promises.readdir(value.buildPath, { recursive: true });
     for (const file of files.filter(value => /\.[cm]?js$/.test(value))) {
-      const source = await fs.promises.readFile(path.resolve(input.buildPath, file), "utf8");
+      const source = await fs.promises.readFile(path.resolve(value.buildPath, file), "utf8");
       for (const importEntry of parse(source)[0]) {
         const specifier = importEntry.n;
         if (
@@ -144,13 +139,13 @@ export default class Nodejs {
 
   /** 在远端 Node 项目中安装生产依赖。 */
   public async dependenciesRemoteInstall(
-    projectPath: DependenciesRemoteInstall["projectPath"],
+    input: z.infer<typeof dependenciesRemoteInstallValidator>,
   ): Promise<void> {
-    const input = dependenciesRemoteInstallValidator.parse({ projectPath });
+    const value = dependenciesRemoteInstallValidator.parse(input);
     await this.isRemoteRunning();
-    await this.sftp.remoteExecute(`
+    await ssh.execute(`
 set -e
-cd ${this.shell(input.projectPath)}
+cd ${this.shell(value.projectPath)}
 npm install --omit=dev --no-package-lock
 `);
   }
@@ -166,10 +161,10 @@ npm install --omit=dev --no-package-lock
     if (!/^[a-f0-9]{64}$/.test(sha256)) {
       throw new TypeError(`Node.js SHA-256 无效: ${sha256}`);
     }
-    await this.apt.isRemoteRunning();
+    await apt.isRemoteRunning();
     const archive = `node-v${version}-${architecture}.tar.xz`;
     const nodeRoot = `/opt/node-v${version}-${architecture}`;
-    await this.ssh.execute(`
+    await ssh.execute(`
 set -e
 NODE_VERSION=${version}
 NODE_ARCHIVE=${archive}
@@ -202,37 +197,37 @@ done
 
 export const nodejs = new Nodejs();
 
-export const nodejsSlice = mcpserver.metas("nodejs")
-  .tool(
-    "post",
-    "/ensure",
-    emptyValidator,
-    "检查远端 Node.js，缺少时完成安装并验证可用性。",
-    mutate,
-    async (context: McpJsonContext<{}>) => {
+export default mcpserver.metas("/nodejs")
+  .add({
+    protocol: "tool",
+    path: "/ensure",
+    description: "检查远端 Node.js，缺少时完成安装并验证可用性。",
+    schema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
       await nodejs.isRemoteRunning();
-      return context.json({ ready: true });
+      return { ready: true };
     },
-  )
-  .tool(
-    "post",
-    "/deploymentPackageCreate",
-    deploymentPackageCreateValidator,
-    "根据本地构建产物生成远端安装使用的生产 package.json。",
-    read,
-    async (context: McpJsonContext<DeploymentPackageCreate>) => {
-      const { buildPath, projectPath } = context.req.valid("json");
-      return context.json(await nodejs.deploymentPackageCreate(buildPath, projectPath));
+  })
+  .add({
+    protocol: "tool",
+    path: "/deploymentPackageCreate",
+    description: "根据本地构建产物生成远端安装使用的生产 package.json。",
+    schema: deploymentPackageCreateValidator.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    handler: async input => {
+      const { buildPath, projectPath } = input;
+      return await nodejs.deploymentPackageCreate(input);
     },
-  )
-  .tool(
-    "post",
-    "/dependenciesRemoteInstall",
-    dependenciesRemoteInstallValidator,
-    "在指定的远端 Node.js 项目目录安装生产依赖。",
-    mutate,
-    async (context: McpJsonContext<DependenciesRemoteInstall>) => {
-      await nodejs.dependenciesRemoteInstall(context.req.valid("json").projectPath);
-      return context.json({ installed: true });
+  })
+  .add({
+    protocol: "tool",
+    path: "/dependenciesRemoteInstall",
+    description: "在指定的远端 Node.js 项目目录安装生产依赖。",
+    schema: dependenciesRemoteInstallValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
+      await nodejs.dependenciesRemoteInstall(input);
+      return { installed: true };
     },
-  );
+  });

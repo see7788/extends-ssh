@@ -1,13 +1,12 @@
 import { nodejs } from "../Nodejs/index.ts";
 import mcpserver from "mcpserver";
-import { emptyValidator, mutate, read, remoteRead, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
 
-export const idValidator = z.object({
+const idValidator = z.object({
   id: z.number().int().min(0),
 }).strict();
-export const processIsRemoteRunningValidator = z.object({
+const processIsRemoteRunningValidator = z.object({
   name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
   path: z.string().trim().min(1),
   command: z.string().trim().min(1),
@@ -17,13 +16,11 @@ export const processIsRemoteRunningValidator = z.object({
     z.string(),
   ).optional(),
 }).strict();
-export const processRemoteCloseValidator = z.object({
+const processRemoteCloseValidator = z.object({
   name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
 }).strict();
 
-export type IdInput = z.infer<typeof idValidator>;
-export type RemoteProcess = z.infer<typeof processIsRemoteRunningValidator>;
-export type ProcessRemoteClose = z.infer<typeof processRemoteCloseValidator>;
+type IdInput = z.infer<typeof idValidator>;
 
 type Pm2ProcessState = {
   id: number;
@@ -49,9 +46,9 @@ type Pm2JsonProcess = {
   };
 };
 
-export default class Pm2 {
-  protected readonly nodejs = nodejs;
-  protected readonly ssh = ssh;
+import type Base from "../Public/Base.ts";
+
+class Pm2 implements Base {
   private remoteRunningPromise?: Promise<void>;
 
   public readonly state: {
@@ -71,33 +68,31 @@ export default class Pm2 {
   }
 
   public async refresh(): Promise<typeof this.state> {
-    const result = await this.ssh.execute("pm2 jlist");
+    const result = await ssh.execute("pm2 jlist");
     const payload: unknown = JSON.parse(result.stdout);
     if (!Array.isArray(payload)) throw new TypeError("PM2 jlist 未返回进程数组");
-    this.state.host = this.ssh.state.host;
+    this.state.host = ssh.state.host;
     this.state.status = "running";
     this.state.processes = payload.map((value, index) => this.processParse(value, index));
     this.state.updatedAt = new Date().toISOString();
     return this.state;
   }
 
-  public async stop(id: IdInput["id"]): Promise<typeof this.state> {
-    const input = idValidator.parse({ id });
+  public async stop(input: IdInput): Promise<typeof this.state> {
+    const value = idValidator.parse(input);
     await this.isRemoteRunning();
-    await this.ssh.execute(`pm2 stop ${String(input.id)} && pm2 save --force >/dev/null`);
+    await ssh.execute(`pm2 stop ${String(value.id)} && pm2 save --force >/dev/null`);
     return this.refresh();
   }
 
-  public async restart(id: IdInput["id"]): Promise<typeof this.state> {
-    const input = idValidator.parse({ id });
+  public async restart(input: IdInput): Promise<typeof this.state> {
+    const value = idValidator.parse(input);
     await this.isRemoteRunning();
-    await this.ssh.execute(`pm2 restart ${String(input.id)} && pm2 save --force >/dev/null`);
+    await ssh.execute(`pm2 restart ${String(value.id)} && pm2 save --force >/dev/null`);
     return this.refresh();
   }
 
   public dispose(): void {
-    this.ssh.dispose();
-    this.remoteRunningPromise = undefined;
     this.state.status = "unknown";
   }
 
@@ -113,13 +108,13 @@ export default class Pm2 {
   }
 
   /** 启动远端 PM2 进程，并确认该进程树监听指定端口。 */
-  public async processIsRemoteRunning(process: RemoteProcess): Promise<void> {
+  public async processIsRemoteRunning(process: z.infer<typeof processIsRemoteRunningValidator>): Promise<void> {
     const input = processIsRemoteRunningValidator.parse(process);
     await this.isRemoteRunning();
     const environment = Object.entries(input.environment ?? {})
       .map(([key, value]) => `${key}=${this.shell(value)}`)
       .join(" ");
-    await this.ssh.execute(`
+    await ssh.execute(`
 set -e
 pm2 delete ${this.shell(input.name)} >/dev/null 2>&1 || true
 cd ${this.shell(input.path)}
@@ -149,20 +144,20 @@ exit 1
   }
 
   /** 停止远端 PM2 进程。 */
-  public async processRemoteClose(name: ProcessRemoteClose["name"]): Promise<void> {
-    const input = processRemoteCloseValidator.parse({ name });
-    await this.ssh.isRunning();
-    await this.ssh.execute(`
+  public async processRemoteClose(input: z.infer<typeof processRemoteCloseValidator>): Promise<void> {
+    const value = processRemoteCloseValidator.parse(input);
+    await ssh.isRemoteRunning();
+    await ssh.execute(`
 if command -v pm2 >/dev/null 2>&1; then
-  pm2 delete ${this.shell(input.name)} >/dev/null 2>&1 || true
+  pm2 delete ${this.shell(value.name)} >/dev/null 2>&1 || true
   pm2 save --force >/dev/null 2>&1 || true
 fi
 `);
   }
 
   private async remoteRunningEnsure(): Promise<void> {
-    await this.nodejs.isRemoteRunning();
-    await this.ssh.execute(`
+    await nodejs.isRemoteRunning();
+    await ssh.execute(`
 set -e
 if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi
 PM2="$(command -v pm2)"
@@ -215,58 +210,58 @@ pm2 --version >/dev/null
 
 export const pm2 = new Pm2();
 
-export const pm2Slice = mcpserver.metas("pm2")
-  .tool(
-    "post",
-    "/state",
-    emptyValidator,
-    "读取当前缓存的 PM2 进程状态。",
-    read,
-    (context: McpJsonContext<{}>) => context.json(pm2.state),
-  )
-  .tool(
-    "post",
-    "/refresh",
-    emptyValidator,
-    "从远端重新读取 PM2 进程并刷新状态。",
-    remoteRead,
-    async (context: McpJsonContext<{}>) => context.json(await pm2.refresh()),
-  )
-  .tool(
-    "post",
-    "/stop",
-    idValidator,
-    "按 PM2 进程编号停止一个远端进程。",
-    mutate,
-    async (context: McpJsonContext<IdInput>) => context.json(await pm2.stop(context.req.valid("json").id)),
-  )
-  .tool(
-    "post",
-    "/restart",
-    idValidator,
-    "按 PM2 进程编号重启一个远端进程。",
-    mutate,
-    async (context: McpJsonContext<IdInput>) => context.json(await pm2.restart(context.req.valid("json").id)),
-  )
-  .tool(
-    "post",
-    "/processIsRemoteRunning",
-    processIsRemoteRunningValidator,
-    "按名称启动 PM2 进程，并验证目标端口已可用。",
-    mutate,
-    async (context: McpJsonContext<RemoteProcess>) => {
-      await pm2.processIsRemoteRunning(context.req.valid("json"));
-      return context.json({ started: true });
+export default mcpserver.metas("/pm2")
+  .add({
+    protocol: "tool",
+    path: "/state",
+    description: "读取当前缓存的 PM2 进程状态。",
+    schema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    handler: input => pm2.state,
+  })
+  .add({
+    protocol: "tool",
+    path: "/refresh",
+    description: "从远端重新读取 PM2 进程并刷新状态。",
+    schema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => await pm2.refresh(),
+  })
+  .add({
+    protocol: "tool",
+    path: "/stop",
+    description: "按 PM2 进程编号停止一个远端进程。",
+    schema: idValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => await pm2.stop(input),
+  })
+  .add({
+    protocol: "tool",
+    path: "/restart",
+    description: "按 PM2 进程编号重启一个远端进程。",
+    schema: idValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => await pm2.restart(input),
+  })
+  .add({
+    protocol: "tool",
+    path: "/processIsRemoteRunning",
+    description: "按名称启动 PM2 进程，并验证目标端口已可用。",
+    schema: processIsRemoteRunningValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
+      await pm2.processIsRemoteRunning(input);
+      return { started: true };
     },
-  )
-  .tool(
-    "post",
-    "/processRemoteClose",
-    processRemoteCloseValidator,
-    "按名称停止一个远端 PM2 进程。",
-    mutate,
-    async (context: McpJsonContext<ProcessRemoteClose>) => {
-      await pm2.processRemoteClose(context.req.valid("json").name);
-      return context.json({ stopped: true });
+  })
+  .add({
+    protocol: "tool",
+    path: "/processRemoteClose",
+    description: "按名称停止一个远端 PM2 进程。",
+    schema: processRemoteCloseValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
+      await pm2.processRemoteClose(input);
+      return { stopped: true };
     },
-  );
+  });

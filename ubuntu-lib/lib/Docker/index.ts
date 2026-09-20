@@ -1,12 +1,13 @@
-import mcpserver from "mcpserver";
+﻿import mcpserver from "mcpserver";
+import { apt } from "../Apt/index.ts";
 import { ssh } from "../Ssh/index.ts";
 
 import type Base from "../Public/Base.ts";
 
-class Apt implements Base {
+class Docker implements Base {
   private remoteRunningPromise?: Promise<void>;
 
-  public isRemoteRunning(): Promise<void> {
+  public remoteIsRunning(): Promise<void> {
     if (this.remoteRunningPromise) return this.remoteRunningPromise;
     const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
       if (this.remoteRunningPromise === remoteRunningPromise) {
@@ -18,36 +19,36 @@ class Apt implements Base {
   }
 
   private async remoteRunningEnsure(): Promise<void> {
+    await apt.remoteIsRunning();
     await ssh.execute(`
 set -e
-test -x /usr/bin/apt-get
 export DEBIAN_FRONTEND=noninteractive
-PACKAGES="lsof net-tools unzip wget ufw sudo curl git ca-certificates gnupg lsb-release xz-utils iproute2"
-MISSING=""
-for PACKAGE in $PACKAGES; do
-  if ! dpkg -s "$PACKAGE" >/dev/null 2>&1; then MISSING="$MISSING $PACKAGE"; fi
-done
-if [ -n "$MISSING" ]; then
+if ! command -v docker >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y -qq --no-install-recommends $MISSING >/dev/null
+  apt-get install -y -qq --no-install-recommends docker.io >/dev/null
 fi
-for COMMAND in lsof netstat unzip wget ufw sudo curl git gpg lsb_release xz ss; do
-  command -v "$COMMAND" >/dev/null
-done
+systemctl enable docker --now >/dev/null
+systemctl is-active --quiet docker
+docker info >/dev/null
 `);
   }
 }
 
-export const apt = new Apt();
+export const docker = new Docker();
 
-export default mcpserver.metas("/apt").add({
+export default mcpserver.metas("/docker").add({
     protocol: "tool",
     path: "/ensure",
-    description: "检查并补齐远端系统所需的 Apt 基础组件。",
+    description: "检查远端 Docker，缺少时完成安装并验证可用性。",
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async input => {
-    await apt.isRemoteRunning();
+    await docker.remoteIsRunning();
     return { ready: true };
   },
   });
+
+
+
+
+

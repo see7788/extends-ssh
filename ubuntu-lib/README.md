@@ -50,7 +50,6 @@ extends-ssh/
 │   ├── Sftp/index.ts                     # 双向 SFTP 文件能力
 │   │   ├── state                         # remoteRoot
 │   │   ├── remotePath(name)               # 解析 SFTP 管理的远端应用根目录
-│   │   ├── remoteExecute(command)         # 统一执行应用目录相关远端操作
 │   │   ├── remoteUpload()/remoteDirectoryUpload()   # 上传文件或目录
 │   │   ├── remoteDirectoryReplace()     # 原子替换远端目录，失败保留旧目录
 │   │   ├── remoteTextUpload()/remoteTextRead()      # 写入或读取远端文本
@@ -88,7 +87,6 @@ extends-ssh/
 │   ├── Peerjs/store.ts                   # PeerJS 镜像、key、端口与路径
 │   ├── StunServer/store.ts               # STUN 端口（默认 3478）
 │   ├── slices.ts                          # 汇总所有同构 MCP slice
-│   ├── mcpBase.ts                          # MCP 注册的公共类型与注解
 │   └── package.json                      # ubuntu-lib 包边界与 Vite peerDependency
 └── pnpm-workspace.yaml                   # 本地包及其 workspace 依赖
 ~~~

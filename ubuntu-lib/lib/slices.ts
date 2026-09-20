@@ -1,7 +1,7 @@
-import mcpserver from "mcpserver";
+﻿import mcpserver from "mcpserver";
 import aptSlice from "./Apt/index.ts";
 import dockerSlice from "./Docker/index.ts";
-import forwardSlice from "./Forward/index.ts";
+import sshForwardSlice from "./SshForward/index.ts";
 import nginxSlice from "./Nginx/index.ts";
 import nodejsSlice from "./Nodejs/index.ts";
 import peerjsSlice from "./Peerjs/index.ts";
@@ -9,13 +9,11 @@ import pm2Slice from "./Pm2/index.ts";
 import sftpSlice from "./Sftp/index.ts";
 import sshSlice from "./Ssh/index.ts";
 import stunServerSlice from "./StunServer/index.ts";
-import viteSlice from "./Vite/index.ts";
-import webrtcsignalingSlice from "./Webrtcsignaling/index.ts";
 
 export default mcpserver.metas("/")
   .baseAdd(aptSlice)
   .baseAdd(dockerSlice)
-  .baseAdd(forwardSlice)
+  .baseAdd(sshForwardSlice)
   .baseAdd(nginxSlice)
   .baseAdd(nodejsSlice)
   .baseAdd(peerjsSlice)
@@ -23,6 +21,9 @@ export default mcpserver.metas("/")
   .baseAdd(sftpSlice)
   .baseAdd(sshSlice)
   .baseAdd(stunServerSlice)
-  .baseAdd(viteSlice)
-  .baseAdd(webrtcsignalingSlice)
-  .import({ name: "ubuntu", description: "配置和交付 Ubuntu 上的系统与应用能力。" });
+  .import({ name: "ubuntu-lib", description: "单远程 Ubuntu 服务基础能力。" });
+
+
+
+
+

@@ -1,10 +1,9 @@
-import { docker } from "../Docker/index.ts";
+﻿import { docker } from "../Docker/index.ts";
 import mcpserver from "mcpserver";
-import { nginx } from "../Nginx/index.ts";
 import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
-
 import type Base from "../Public/Base.ts";
+
 
 class Peerjs implements Base {
   private remoteRunningPromise?: Promise<void>;
@@ -20,7 +19,7 @@ class Peerjs implements Base {
     };
   }
 
-  public isRemoteRunning(): Promise<void> {
+  public remoteIsRunning(): Promise<void> {
     if (this.remoteRunningPromise) return this.remoteRunningPromise;
     const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
       if (this.remoteRunningPromise === remoteRunningPromise) {
@@ -34,7 +33,7 @@ class Peerjs implements Base {
   private async remoteRunningEnsure(): Promise<void> {
     const { peerjs } = store.getState();
     const configuration = `${peerjs.image}|${peerjs.listenPort}|${peerjs.pathname}|${peerjs.key}`;
-    await docker.isRemoteRunning();
+    await docker.remoteIsRunning();
     await ssh.execute(`
 set -e
 docker info >/dev/null
@@ -66,14 +65,7 @@ done
 docker logs --tail 40 peerjs >&2 || true
 exit 1
 `);
-
     const state = this.state;
-    await nginx.proxyRouteIsRunning({
-      name: "peerjs",
-      hostname: state.host,
-      pathname: state.path,
-      upstreamPort: peerjs.listenPort,
-    });
     const health = await fetch(
       `https://${state.host}${state.path}`,
       { signal: AbortSignal.timeout(10_000) },
@@ -106,7 +98,14 @@ export default mcpserver.metas("/peerjs")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async input => {
-      await peerjs.isRemoteRunning();
+      await peerjs.remoteIsRunning();
       return { ready: true };
     },
   });
+
+
+
+
+
+
+

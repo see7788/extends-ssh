@@ -1,7 +1,7 @@
 import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 import { z } from "zod";
 
-export const sshValidator = z.object({
+const sshValidator = z.object({
   ssh: z.object({
     host: z.string().trim().min(1),
     port: z.number().int().min(1).max(65_535),

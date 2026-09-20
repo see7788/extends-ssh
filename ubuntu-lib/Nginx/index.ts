@@ -1,6 +1,5 @@
 import { apt } from "../Apt/index.ts";
 import mcpserver from "mcpserver";
-import { emptyValidator, mutate, read, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 import store from "../store/index.ts";
 import { z } from "zod";
@@ -15,35 +14,32 @@ const linuxAbsolutePathValidator = z.string().trim()
   .regex(/^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]+$/);
 const portValidator = z.number().int().min(1).max(65_535);
 
-export const proxyRouteIsRunningValidator = z.object({
+const proxyRouteIsRunningValidator = z.object({
   name: nameValidator,
   hostname: hostnameValidator,
   pathname: pathnameValidator,
   upstreamPort: portValidator,
 }).strict();
-export const staticRouteIsRunningValidator = z.object({
+const staticRouteIsRunningValidator = z.object({
   name: nameValidator,
   hostname: hostnameValidator,
   pathname: pathnameValidator,
   root: linuxAbsolutePathValidator,
   spaFallback: z.boolean(),
 }).strict();
-export const routeCloseValidator = z.object({
+const routeCloseValidator = z.object({
   name: nameValidator,
   hostname: hostnameValidator,
 }).strict();
 
-export type ProxyRoute = z.infer<typeof proxyRouteIsRunningValidator>;
-export type StaticRoute = z.infer<typeof staticRouteIsRunningValidator>;
-export type Route = z.infer<typeof routeCloseValidator>;
 
-export default class Nginx {
-  protected readonly apt = apt;
-  protected readonly ssh = ssh;
+import type Base from "../Public/Base.ts";
+
+class Nginx implements Base {
   private remoteRunningPromise?: Promise<void>;
 
   public get state() {
-    const domain = hostnameValidator.parse(store.getState().public.domain);
+    const domain = hostnameValidator.parse(store.getState().domain);
     return {
       domain,
       httpPort: 80 as const,
@@ -63,7 +59,7 @@ export default class Nginx {
     return remoteRunningPromise;
   }
 
-  public async proxyRouteIsRunning(route: ProxyRoute): Promise<void> {
+  public async proxyRouteIsRunning(route: z.infer<typeof proxyRouteIsRunningValidator>): Promise<void> {
     const { name, hostname, pathname, upstreamPort } = proxyRouteIsRunningValidator.parse(route);
     const proxyConfiguration = `
     proxy_pass http://127.0.0.1:${upstreamPort};
@@ -87,7 +83,7 @@ export default class Nginx {
     });
   }
 
-  public async staticRouteIsRunning(route: StaticRoute): Promise<void> {
+  public async staticRouteIsRunning(route: z.infer<typeof staticRouteIsRunningValidator>): Promise<void> {
     const { name, hostname, pathname, root, spaFallback } = staticRouteIsRunningValidator.parse(route);
     const fallback = spaFallback
       ? pathname === "/" ? "/index.html" : `${pathname}/index.html`
@@ -102,10 +98,10 @@ export default class Nginx {
     });
   }
 
-  public async routeClose(route: Route): Promise<void> {
+  public async routeClose(route: z.infer<typeof routeCloseValidator>): Promise<void> {
     const { name, hostname } = routeCloseValidator.parse(route);
     await this.isRemoteRunning();
-    await this.ssh.execute(`
+    await ssh.execute(`
 set -e
 rm -f ${this.shell(this.routePath(hostname, name))} ${this.shell(this.legacyPath(name))}
 /www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
@@ -114,8 +110,8 @@ rm -f ${this.shell(this.routePath(hostname, name))} ${this.shell(this.legacyPath
   }
 
   private async remoteRunningEnsure(): Promise<void> {
-    await this.apt.isRemoteRunning();
-    await this.ssh.execute(`
+    await apt.isRemoteRunning();
+    await ssh.execute(`
 set -e
 NGINX=/www/server/nginx/sbin/nginx
 test -x "$NGINX"
@@ -139,7 +135,7 @@ ufw reload >/dev/null
     await this.isRemoteRunning();
     const hostnamePath = this.hostnamePath(route.hostname);
     const routeDirectory = this.routeDirectory(route.hostname);
-    await this.ssh.execute(`
+    await ssh.execute(`
 set -e
 mkdir -p ${this.shell(routeDirectory)}
 rm -f ${this.shell(this.legacyPath(route.name))}
@@ -204,56 +200,56 @@ HTTPS
 
 export const nginx = new Nginx();
 
-export const nginxSlice = mcpserver.metas("nginx")
-  .tool(
-    "post",
-    "/state",
-    emptyValidator,
-    "读取 Nginx 的公开访问状态。",
-    read,
-    (context: McpJsonContext<{}>) => context.json(nginx.state),
-  )
-  .tool(
-    "post",
-    "/ensure",
-    emptyValidator,
-    "检查远端 Nginx，缺少时完成安装与基础配置。",
-    mutate,
-    async (context: McpJsonContext<{}>) => {
+export default mcpserver.metas("/nginx")
+  .add({
+    protocol: "tool",
+    path: "/state",
+    description: "读取 Nginx 的公开访问状态。",
+    schema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    handler: input => nginx.state,
+  })
+  .add({
+    protocol: "tool",
+    path: "/ensure",
+    description: "检查远端 Nginx，缺少时完成安装与基础配置。",
+    schema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
       await nginx.isRemoteRunning();
-      return context.json({ ready: true });
+      return { ready: true };
     },
-  )
-  .tool(
-    "post",
-    "/proxyRouteIsRunning",
-    proxyRouteIsRunningValidator,
-    "写入并启用指定域名、路径与目标端口的 Nginx 反向代理路由。",
-    mutate,
-    async (context: McpJsonContext<ProxyRoute>) => {
-      await nginx.proxyRouteIsRunning(context.req.valid("json"));
-      return context.json({ configured: true });
+  })
+  .add({
+    protocol: "tool",
+    path: "/proxyRouteIsRunning",
+    description: "写入并启用指定域名、路径与目标端口的 Nginx 反向代理路由。",
+    schema: proxyRouteIsRunningValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
+      await nginx.proxyRouteIsRunning(input);
+      return { configured: true };
     },
-  )
-  .tool(
-    "post",
-    "/staticRouteIsRunning",
-    staticRouteIsRunningValidator,
-    "写入并启用指定域名、路径与静态目录的 Nginx 静态资源路由。",
-    mutate,
-    async (context: McpJsonContext<StaticRoute>) => {
-      await nginx.staticRouteIsRunning(context.req.valid("json"));
-      return context.json({ configured: true });
+  })
+  .add({
+    protocol: "tool",
+    path: "/staticRouteIsRunning",
+    description: "写入并启用指定域名、路径与静态目录的 Nginx 静态资源路由。",
+    schema: staticRouteIsRunningValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
+      await nginx.staticRouteIsRunning(input);
+      return { configured: true };
     },
-  )
-  .tool(
-    "post",
-    "/routeClose",
-    routeCloseValidator,
-    "关闭并移除指定名称与域名的 Nginx 路由。",
-    mutate,
-    async (context: McpJsonContext<Route>) => {
-      await nginx.routeClose(context.req.valid("json"));
-      return context.json({ closed: true });
+  })
+  .add({
+    protocol: "tool",
+    path: "/routeClose",
+    description: "关闭并移除指定名称与域名的 Nginx 路由。",
+    schema: routeCloseValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
+      await nginx.routeClose(input);
+      return { closed: true };
     },
-  );
+  });

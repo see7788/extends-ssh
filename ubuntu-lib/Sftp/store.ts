@@ -15,7 +15,7 @@ export const remoteRootValidator = z
     { message: "remoteRoot 必须是规范化的 Linux 绝对路径" },
   );
 
-export const sftpValidator = z.object({
+const sftpValidator = z.object({
   sftp: z.object({
     remoteRoot: remoteRootValidator,
   }).strict(),

@@ -7,37 +7,28 @@ import type { Plugin, ResolvedConfig } from "vite";
 import { z } from "zod";
 import { forward } from "../Forward/index.ts";
 import mcpserver from "mcpserver";
-import {
-  mutate,
-  read,
-  type McpJsonContext,
-  type McpResourceContext,
-} from "../mcpBase.ts";
 import { nginx } from "../Nginx/index.ts";
 import { nodejs } from "../Nodejs/index.ts";
 import { pm2 } from "../Pm2/index.ts";
 import { sftp } from "../Sftp/index.ts";
+import { ssh } from "../Ssh/index.ts";
 
 const projectPathValidator = z.string().trim().min(1).refine(path.isAbsolute, {
   message: "projectPath 必须是绝对路径",
 });
-export const projectReadValidator = z.object({
+const projectReadValidator = z.object({
   projectPath: projectPathValidator,
 }).strict();
-export const dependenciesInstallValidator = projectReadValidator;
-export const importsEnsureValidator = z.object({
+const dependenciesInstallValidator = projectReadValidator;
+const importsEnsureValidator = z.object({
   projectPath: projectPathValidator,
   sourceFilePath: z.string().trim().min(1).refine(path.isAbsolute, {
     message: "sourceFilePath 必须是绝对路径",
   }),
 }).strict();
-export const stateValidator = z.object({
+const stateValidator = z.object({
   port: z.number().int().min(1).max(65535),
 }).strict();
-export type ProjectRead = z.infer<typeof projectReadValidator>;
-export type DependenciesInstall = z.infer<typeof dependenciesInstallValidator>;
-export type ImportsEnsure = z.infer<typeof importsEnsureValidator>;
-export type State = z.infer<typeof stateValidator>;
 
 const dependencyMapValidator = z.record(z.string(), z.string());
 const projectPackageValidator = z.object({
@@ -66,12 +57,21 @@ const applicableExpressions = {
   hono: ["ubuntu.vite.dev.forward()", "ubuntu.vite.pro.nodejs()"],
   "electron-vite": ["ubuntu.vite.dev.forward()"],
 } as const satisfies Record<"node" | "hono" | "electron-vite", readonly string[]>;
-export default class Vite {
-  protected readonly forward = forward;
-  protected readonly nginx = nginx;
-  protected readonly nodejs = nodejs;
-  protected readonly pm2 = pm2;
-  protected readonly sftp = sftp;
+import type Base from "../Public/Base.ts";
+
+class Vite implements Base {
+  private remoteRunningPromise?: Promise<void>;
+
+  public isRemoteRunning(): Promise<void> {
+    if (this.remoteRunningPromise) return this.remoteRunningPromise;
+    const remoteRunningPromise = ssh.isRemoteRunning().finally(() => {
+      if (this.remoteRunningPromise === remoteRunningPromise) {
+        this.remoteRunningPromise = undefined;
+      }
+    });
+    this.remoteRunningPromise = remoteRunningPromise;
+    return remoteRunningPromise;
+  }
 
   private missingPath(error: unknown): boolean {
     return typeof error === "object"
@@ -206,9 +206,9 @@ export default class Vite {
   private targetResolve(port: number) {
     const targetPort = this.portRequired(port);
     const name = `vite-${targetPort}`;
-    const remotePath = this.sftp.remotePath(name);
+    const remotePath = sftp.remotePath({ name });
     return {
-      hostname: `${name}.dev.${this.nginx.state.domain}`,
+      hostname: `${name}.dev.${nginx.state.domain}`,
       kindPath: path.posix.join(remotePath, ".extends-ssh-kind"),
       name,
       port: targetPort,
@@ -261,7 +261,7 @@ export default class Vite {
     throw lastFailure;
   }
 
-  public async projectRead(input: ProjectRead) {
+  public async projectRead(input: z.infer<typeof projectReadValidator>) {
     const value = projectReadValidator.parse(input);
     const canonicalPath = await this.canonicalProjectPath(value.projectPath);
     const packagePath = path.join(canonicalPath, "package.json");
@@ -340,7 +340,7 @@ export default class Vite {
     };
   }
 
-  public async dependenciesInstall(input: DependenciesInstall) {
+  public async dependenciesInstall(input: z.infer<typeof dependenciesInstallValidator>) {
     try {
       const value = dependenciesInstallValidator.parse(input);
       const projectPath = await this.canonicalProjectPath(value.projectPath);
@@ -380,7 +380,7 @@ export default class Vite {
     }
   }
 
-  public async importsEnsure(input: ImportsEnsure) {
+  public async importsEnsure(input: z.infer<typeof importsEnsureValidator>) {
     try {
       const value = importsEnsureValidator.parse(input);
       const projectPath = await this.canonicalProjectPath(value.projectPath);
@@ -407,9 +407,9 @@ export default class Vite {
     }
   }
 
-  public state(port: State["port"]) {
-    const input = stateValidator.parse({ port });
-    const target = this.targetResolve(input.port);
+  public state(input: z.infer<typeof stateValidator>) {
+    const value = stateValidator.parse(input);
+    const target = this.targetResolve(value.port);
     return { host: target.hostname, port: 443 as const, secure: true as const };
   }
 
@@ -429,7 +429,7 @@ export default class Vite {
           }
           return {
             server: {
-              allowedHosts: [`.dev.${this.nginx.state.domain}`],
+              allowedHosts: [`.dev.${nginx.state.domain}`],
               host: "127.0.0.1",
               strictPort: true,
             },
@@ -476,12 +476,12 @@ export default class Vite {
               }
 
               try {
-                const productionKindText = await this.sftp.remoteTextRead(target.kindPath);
+                const productionKindText = await sftp.remoteTextRead({ remotePath: target.kindPath });
                 const productionKind = productionKindText === undefined
                   ? undefined
                   : productionKindText.trim();
                 if (productionKind === "static") {
-                  await this.nginx.staticRouteIsRunning({
+                  await nginx.staticRouteIsRunning({
                     name: target.name,
                     hostname: target.hostname,
                     pathname: "/",
@@ -489,14 +489,14 @@ export default class Vite {
                     spaFallback: true,
                   });
                 } else if (productionKind === "node") {
-                  await this.nginx.proxyRouteIsRunning({
+                  await nginx.proxyRouteIsRunning({
                     name: target.name,
                     hostname: target.hostname,
                     pathname: "/",
                     upstreamPort: target.port,
                   });
                 } else {
-                  await this.nginx.routeClose({
+                  await nginx.routeClose({
                     name: target.name,
                     hostname: target.hostname,
                   });
@@ -522,17 +522,17 @@ export default class Vite {
                   );
                 }
 
-                registeredForward = this.forward.register({
+                registeredForward = forward.register({
                   name: target.name,
                   local: { host: "127.0.0.1", port: target.port },
                   remote: { host: "127.0.0.1", port: 0 },
                 });
-                const { remotePort } = await registeredForward.isRunning();
-                await this.nginx.proxyRouteIsRunning({
+                await registeredForward.isRemoteRunning();
+                await nginx.proxyRouteIsRunning({
                   name: target.name,
                   hostname: target.hostname,
                   pathname: "/",
-                  upstreamPort: this.portRequired(remotePort),
+                  upstreamPort: this.portRequired(registeredForward.remotePort),
                 });
                 await this.publicVerify(target.hostname, "/__vite_ping", {
                   accept: "text/x-vite-ping",
@@ -585,10 +585,10 @@ export default class Vite {
             throw new Error(`Vite 构建目录不存在: ${buildPath}`);
           }
 
-          await this.sftp.remoteDirectoryReplace(buildPath, target.remotePath);
-          await this.pm2.processRemoteClose(`vite-node-${target.port}`);
-          await this.sftp.remoteTextUpload("static", target.kindPath);
-          await this.nginx.staticRouteIsRunning({
+          await sftp.remoteDirectoryReplace({ localPath: buildPath, remotePath: target.remotePath });
+          await pm2.processRemoteClose({ name: `vite-node-${target.port}` });
+          await sftp.remoteTextUpload({ text: "static", remotePath: target.kindPath });
+          await nginx.staticRouteIsRunning({
             name: target.name,
             hostname: target.hostname,
             pathname: "/",
@@ -625,10 +625,10 @@ export default class Vite {
             throw new Error(`Node 构建目录不存在: ${buildPath}`);
           }
 
-          const deploymentPackage = await this.nodejs.deploymentPackageCreate(
+          const deploymentPackage = await nodejs.deploymentPackageCreate({
             buildPath,
             projectPath,
-          );
+          });
           const entryPath = path.resolve(
             buildPath,
             deploymentPackage.name,
@@ -639,24 +639,24 @@ export default class Vite {
           }
 
           const processName = `vite-node-${target.port}`;
-          await this.sftp.remoteDirectoryReplace(
-            buildPath,
-            path.posix.join(target.remotePath, "dist"),
-          );
-          await this.sftp.remoteTextUpload(
-            deploymentPackage.content,
-            path.posix.join(target.remotePath, "package.json"),
-          );
-          await this.nodejs.dependenciesRemoteInstall(target.remotePath);
-          await this.pm2.processIsRemoteRunning({
+          await sftp.remoteDirectoryReplace({
+            localPath: buildPath,
+            remotePath: path.posix.join(target.remotePath, "dist"),
+          });
+          await sftp.remoteTextUpload({
+            text: deploymentPackage.content,
+            remotePath: path.posix.join(target.remotePath, "package.json"),
+          });
+          await nodejs.dependenciesRemoteInstall({ projectPath: target.remotePath });
+          await pm2.processIsRemoteRunning({
             name: processName,
             path: target.remotePath,
             command: `node dist/${deploymentPackage.name}/index.js`,
             port: target.port,
             environment: { HOST: "127.0.0.1", PORT: String(target.port) },
           });
-          await this.sftp.remoteTextUpload("node", target.kindPath);
-          await this.nginx.proxyRouteIsRunning({
+          await sftp.remoteTextUpload({ text: "node", remotePath: target.kindPath });
+          await nginx.proxyRouteIsRunning({
             name: target.name,
             hostname: target.hostname,
             pathname: "/",
@@ -675,34 +675,31 @@ export const vite = new Vite();
 const readmeUri = new URL("../README.md", import.meta.url).href;
 const readmePath = fileURLToPath(new URL("../README.md", import.meta.url));
 
-export const viteSlice = mcpserver.metas("vite")
-  .resource(
-    "get",
-    "/readme",
-    readmeUri,
-    {
-      title: "项目 README",
-      description: "读取 Ubuntu Vite 项目接入说明。",
-      mimeType: "text/markdown",
-    },
-    async (context: McpResourceContext) => context.json({
-      contents: [{
+export default mcpserver.metas("/vite")
+  .add({
+    protocol: "resource",
+    path: "/readme",
+    resourceUri: readmeUri,
+    description: "读取 Ubuntu Vite 项目接入说明。",
+    schema: {},
+    handler: async input => {
+      return { contents: [{
         uri: readmeUri,
         mimeType: "text/markdown",
         text: await readFile(readmePath, "utf8"),
-      }],
-    }),
-  )
-  .tool(
-    "post",
-    "/projectRead",
-    projectReadValidator,
-    "识别 Vite 项目类型并返回 Ubuntu 接入信息。",
-    read,
-    async (context: McpJsonContext<ProjectRead>) => {
+      }] };
+    },
+  })
+  .add({
+    protocol: "tool",
+    path: "/projectRead",
+    description: "识别 Vite 项目类型并返回 Ubuntu 接入信息。",
+    schema: projectReadValidator.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    handler: async input => {
       try {
-        const result = await vite.projectRead(context.req.valid("json"));
-        return context.json({
+        const result = await vite.projectRead(input);
+        return {
           ...result,
           blackbox: {
             resourceName: "vite.readme",
@@ -710,50 +707,48 @@ export const viteSlice = mcpserver.metas("vite")
             uri: readmeUri,
             instruction: "在组合下方公开表达式之前，必须先读取 vite.readme MCP 资源。",
           },
-        });
+        };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return context.json({ error: message }, 400);
+        return { error: message };
       }
     },
-  )
-  .tool(
-    "post",
-    "/dependenciesInstall",
-    dependenciesInstallValidator,
-    "补齐 Ubuntu Vite 依赖并执行 pnpm install。",
-    mutate,
-    async (context: McpJsonContext<DependenciesInstall>) => {
+  })
+  .add({
+    protocol: "tool",
+    path: "/dependenciesInstall",
+    description: "补齐 Ubuntu Vite 依赖并执行 pnpm install。",
+    schema: dependenciesInstallValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
       try {
-        return context.json(await vite.dependenciesInstall(context.req.valid("json")));
+        return await vite.dependenciesInstall(input);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return context.json({ error: message }, 400);
+        return { error: message };
       }
     },
-  )
-  .tool(
-    "post",
-    "/importsEnsure",
-    importsEnsureValidator,
-    "向项目 TypeScript 文件补充 Ubuntu 导入。",
-    mutate,
-    async (context: McpJsonContext<ImportsEnsure>) => {
+  })
+  .add({
+    protocol: "tool",
+    path: "/importsEnsure",
+    description: "向项目 TypeScript 文件补充 Ubuntu 导入。",
+    schema: importsEnsureValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
       try {
-        return context.json(await vite.importsEnsure(context.req.valid("json")));
+        return await vite.importsEnsure(input);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return context.json({ error: message }, 400);
+        return { error: message };
       }
     },
-  )
-  .tool(
-    "post",
-    "/state",
-    stateValidator,
-    "根据 Vite 端口返回公开 HTTPS 访问状态。",
-    read,
-    (context: McpJsonContext<State>) => context.json(
-      vite.state(context.req.valid("json").port),
-    ),
-  );
+  })
+  .add({
+    protocol: "tool",
+    path: "/state",
+    description: "根据 Vite 端口返回公开 HTTPS 访问状态。",
+    schema: stateValidator.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    handler: input => vite.state(input),
+  });

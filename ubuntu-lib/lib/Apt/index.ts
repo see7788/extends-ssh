@@ -1,4 +1,4 @@
-import mcpserver from "mcpserver";
+﻿import mcpserver from "mcpserver";
 import { ssh } from "../Ssh/index.ts";
 
 import type Base from "../Public/Base.ts";
@@ -6,7 +6,7 @@ import type Base from "../Public/Base.ts";
 class Apt implements Base {
   private remoteRunningPromise?: Promise<void>;
 
-  public isRemoteRunning(): Promise<void> {
+  public remoteIsRunning(): Promise<void> {
     if (this.remoteRunningPromise) return this.remoteRunningPromise;
     const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
       if (this.remoteRunningPromise === remoteRunningPromise) {
@@ -41,13 +41,18 @@ done
 export const apt = new Apt();
 
 export default mcpserver.metas("/apt").add({
-    protocol: "tool",
-    path: "/ensure",
-    description: "检查并补齐远端系统所需的 Apt 基础组件。",
-    schema: {},
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-    await apt.isRemoteRunning();
+  protocol: "tool",
+  path: "/ensure",
+  description: "检查并补齐远端系统所需的 Apt 基础组件。",
+  schema: {},
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  handler: async input => {
+    await apt.remoteIsRunning();
     return { ready: true };
   },
-  });
+});
+
+
+
+
+

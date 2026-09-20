@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import cwdPersist from "zustand-lib/cwdPersist";
 import { createStore } from "zustand/vanilla";
+import type {} from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import peerjsStore from "../Peerjs/store.ts";
 import publicStore from "../Public/store.ts";
@@ -16,13 +17,13 @@ const store = createStore<Store>()(
   cwdPersist({
     cwd: path.join(homedir(), ".extends-ssh"),
     name: pkg.name,
-    initializer: immer<Store>((set, get, api) => ({
-      ...publicStore(set, get, api),
-      ...sftpStore(set, get, api),
-      ...sshStore(set, get, api),
-      ...peerjsStore(set, get, api),
-      ...stunServerStore(set, get, api),
-      ...webrtcsignalingStore(set, get, api),
+    initializer: immer<Store>((...s) => ({
+      ...publicStore(...s),
+      ...sftpStore(...s),
+      ...sshStore(...s),
+      ...peerjsStore(...s),
+      ...stunServerStore(...s),
+      ...webrtcsignalingStore(...s),
     })),
   }),
 );

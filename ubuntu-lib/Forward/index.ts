@@ -1,11 +1,10 @@
 import net from "node:net";
 import mcpserver from "mcpserver";
-import { emptyValidator, mutate, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
 
 const hostValidator = z.string().trim().min(1);
-export const registerValidator = z.object({
+const registerValidator = z.object({
   name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
   local: z.object({
     host: hostValidator,
@@ -16,18 +15,13 @@ export const registerValidator = z.object({
     port: z.number().int().min(0).max(65_535),
   }).strict(),
 }).strict();
+type ForwardRegistration = z.infer<typeof registerValidator>;
 
-export type ForwardRegistration = z.infer<typeof registerValidator>;
 
-export type ForwardState = ForwardRegistration;
-
-export type ForwardRunningState = {
-  remotePort: number;
-};
-
-export type RegisteredForward = {
-  readonly state: ForwardState;
-  isRunning(): Promise<ForwardRunningState>;
+type RegisteredForward = {
+  readonly state: ForwardRegistration;
+  readonly remotePort: number;
+  isRemoteRunning(): Promise<void>;
   close(): Promise<void>;
 };
 
@@ -42,17 +36,35 @@ type Connection = {
 };
 
 type ForwardData = {
-  state: ForwardState;
+  state: ForwardRegistration;
   connections: Set<Connection>;
   instance: RegisteredForward;
   handle?: SshForward;
-  running?: Promise<ForwardRunningState>;
+  running?: Promise<void>;
   sshRevision?: number;
 };
 
-export default class Forward {
-  protected readonly ssh = ssh;
+import type Base from "../Public/Base.ts";
+
+class Forward implements Base {
   private readonly forwards = new Map<string, ForwardData>();
+  private remoteRunningPromise?: Promise<void>;
+
+  public isRemoteRunning(): Promise<void> {
+    if (this.remoteRunningPromise) return this.remoteRunningPromise;
+    const remoteRunningPromise = (async () => {
+      await ssh.isRemoteRunning();
+      await Promise.all(
+        Array.from(this.forwards.values(), forward => this.forwardIsRunning(forward)),
+      );
+    })().finally(() => {
+      if (this.remoteRunningPromise === remoteRunningPromise) {
+        this.remoteRunningPromise = undefined;
+      }
+    });
+    this.remoteRunningPromise = remoteRunningPromise;
+    return remoteRunningPromise;
+  }
 
   public register(registrationInput: ForwardRegistration): RegisteredForward {
     const registration = registerValidator.parse(registrationInput);
@@ -74,7 +86,13 @@ export default class Forward {
           remote: { ...state.remote },
         };
       },
-      isRunning: () => this.forwardIsRunning(forward),
+      get remotePort() {
+        if (!forward.handle || forward.sshRevision !== ssh.revision) {
+          throw new Error(`SSH 杞彂灏氭湭杩愯: ${state.name}`);
+        }
+        return forward.handle.port;
+      },
+      isRemoteRunning: () => this.forwardIsRunning(forward),
       close: () => this.forwardClose(forward),
     };
     forward = {
@@ -91,7 +109,7 @@ export default class Forward {
     this.forwards.clear();
   }
 
-  private forwardIsRunning(forward: ForwardData): Promise<ForwardRunningState> {
+  private forwardIsRunning(forward: ForwardData): Promise<void> {
     if (forward.running) return forward.running;
     const running = this.forwardRunningEnsure(forward).finally(() => {
       if (forward.running === running) forward.running = undefined;
@@ -100,16 +118,16 @@ export default class Forward {
     return running;
   }
 
-  private async forwardRunningEnsure(forward: ForwardData): Promise<ForwardRunningState> {
+  private async forwardRunningEnsure(forward: ForwardData): Promise<void> {
     try {
-      await this.ssh.isRunning();
-      if (forward.handle && forward.sshRevision === this.ssh.revision) {
-        return { remotePort: forward.handle.port };
+      await ssh.isRemoteRunning();
+      if (forward.handle && forward.sshRevision === ssh.revision) {
+        return;
       }
 
       this.connectionsClose(forward);
       await forward.handle?.dispose().catch(() => undefined);
-      forward.handle = await this.ssh.client.forwardIn(
+      forward.handle = await ssh.client.forwardIn(
         forward.state.remote.host,
         forward.state.remote.port,
         (_details, accept, reject) => {
@@ -137,8 +155,7 @@ export default class Forward {
           });
         },
       );
-      forward.sshRevision = this.ssh.revision;
-      return { remotePort: forward.handle.port };
+      forward.sshRevision = ssh.revision;
     } catch (error) {
       forward.handle = undefined;
       forward.sshRevision = undefined;
@@ -175,27 +192,27 @@ export default class Forward {
 
 export const forward = new Forward();
 
-export const forwardSlice = mcpserver.metas("forward")
-  .tool(
-    "post",
-    "/register",
-    registerValidator,
-    "注册并返回持久的 SSH 转发状态。",
-    mutate,
-    async (context: McpJsonContext<ForwardRegistration>) => {
-      const registration = forward.register(context.req.valid("json"));
-      const running = await registration.isRunning();
-      return context.json({ state: registration.state, ...running });
+export default mcpserver.metas("/forward")
+  .add({
+    protocol: "tool",
+    path: "/register",
+    description: "注册并返回持久的 SSH 转发状态。",
+    schema: registerValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
+      const registration = forward.register(input);
+      await registration.isRemoteRunning();
+      return { state: registration.state, remotePort: registration.remotePort };
     },
-  )
-  .tool(
-    "post",
-    "/dispose",
-    emptyValidator,
-    "关闭并释放所有持久的 SSH 转发。",
-    mutate,
-    async (context: McpJsonContext<{}>) => {
+  })
+  .add({
+    protocol: "tool",
+    path: "/dispose",
+    description: "关闭并释放所有持久的 SSH 转发。",
+    schema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
       await forward.dispose();
-      return context.json({ disposed: true });
+      return { disposed: true };
     },
-  );
+  });

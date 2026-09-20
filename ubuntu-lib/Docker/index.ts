@@ -1,11 +1,10 @@
 import mcpserver from "mcpserver";
 import { apt } from "../Apt/index.ts";
-import { emptyValidator, mutate, type McpJsonContext } from "../mcpBase.ts";
 import { ssh } from "../Ssh/index.ts";
 
-export default class Docker {
-  protected readonly apt = apt;
-  protected readonly ssh = ssh;
+import type Base from "../Public/Base.ts";
+
+class Docker implements Base {
   private remoteRunningPromise?: Promise<void>;
 
   public isRemoteRunning(): Promise<void> {
@@ -20,8 +19,8 @@ export default class Docker {
   }
 
   private async remoteRunningEnsure(): Promise<void> {
-    await this.apt.isRemoteRunning();
-    await this.ssh.execute(`
+    await apt.isRemoteRunning();
+    await ssh.execute(`
 set -e
 export DEBIAN_FRONTEND=noninteractive
 if ! command -v docker >/dev/null 2>&1; then
@@ -37,14 +36,14 @@ docker info >/dev/null
 
 export const docker = new Docker();
 
-export const dockerSlice = mcpserver.metas("docker").tool(
-  "post",
-  "/ensure",
-  emptyValidator,
-  "检查远端 Docker，缺少时完成安装并验证可用性。",
-  mutate,
-  async (context: McpJsonContext<{}>) => {
+export default mcpserver.metas("/docker").add({
+    protocol: "tool",
+    path: "/ensure",
+    description: "检查远端 Docker，缺少时完成安装并验证可用性。",
+    schema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => {
     await docker.isRemoteRunning();
-    return context.json({ ready: true });
+    return { ready: true };
   },
-);
+  });
