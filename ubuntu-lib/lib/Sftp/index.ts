@@ -1,15 +1,13 @@
-﻿import { isAbsolute, posix } from "node:path";
+﻿import Base from "../public/Base.ts";
+import { isAbsolute, posix } from "node:path";
 import mcpserver from "mcpserver";
 import { z } from "zod";
 
-import store from "../store/index.ts";
-import { ssh } from "../Ssh/index.ts";
-import { remoteRootValidator } from "./store.ts";
+import store from "../store/index";
+import { ssh } from "../ssh/index";
+import { remoteRootValidator } from "./store";
 
-const devPortValidator = z.number().int().min(1).max(9_999);
-
-
-
+const devPortValidator = z.number().int().min(1).max(65_535);
 const makeRemoteValidator = z.object({
   port: devPortValidator,
   localPath: z.string().trim().min(1).refine(isAbsolute, "localPath 必须是绝对路径"),
@@ -20,45 +18,26 @@ type Remote = {
   hasRemote(): Promise<boolean>;
 };
 
-class Sftp {
-  private runningPromise?: Promise<void>;
-  private readonly operations = new Map<number, Promise<void>>();
-  private remoteIsRunning(): Promise<void> {
-    if (this.runningPromise) return this.runningPromise;
-    const promise = ssh.remoteIsRunning().finally(() => {
-      if (this.runningPromise === promise) this.runningPromise = undefined;
-    });
-    this.runningPromise = promise;
-    return promise;
+class Sftp extends Base {
+  protected async remoteIsRunning(): Promise<void> {
+    await ssh.execute("true");
   }
-  public async getRemote(port: number): Promise<Remote> {
-    const value = getRemoteValidator.parse({ port });
-    if (!await this.hasRemote(value.port)) {
-      throw new Error(`开发端口尚未分配 SFTP 远程目录: ${value.port}`);
+  async getRemote(port: number): Promise<Remote> {
+    if (!await this.hasRemote(port)) {
+      throw new Error(`开发端口尚未分配 SFTP 远程目录: ${port}`);
     }
-    return this.remote(value.port);
+    return this.remote(port);
   }
-  public async hasRemote(port: number): Promise<boolean> {
-    const value = getRemoteValidator.parse({ port }).port;
-    const remotePath = this.remotePath(value);
+  async hasRemote(port: number): Promise<boolean> {
+    const remotePath = this.remotePath(port);
     await this.remoteIsRunning();
     const markerPath = posix.join(remotePath, ".extends-ssh-port");
     const result = await ssh.execute(`test -f ${this.shell(markerPath)} && cat ${this.shell(markerPath)} || true`);
-    return result.stdout.trim() === String(value);
+    return result.stdout.trim() === String(port);
   }
-  public async makeRemote(input: z.infer<typeof makeRemoteValidator>): Promise<Remote> {
-    const value = makeRemoteValidator.parse(input);
-    const current = this.operations.get(value.port);
-    if (current) {
-      await current;
-      return this.remote(value.port);
-    }
-    const operation = this.makeRemoteEnsure(value).finally(() => {
-      if (this.operations.get(value.port) === operation) this.operations.delete(value.port);
-    });
-    this.operations.set(value.port, operation);
-    await operation;
-    return this.remote(value.port);
+  async makeRemote(input: z.infer<typeof makeRemoteValidator>): Promise<Remote> {
+    await this.makeRemoteEnsure(input);
+    return this.remote(input.port);
   }
   private async makeRemoteEnsure(value: z.infer<typeof makeRemoteValidator>): Promise<void> {
     await this.remoteIsRunning();
@@ -75,10 +54,9 @@ class Sftp {
   }
 
   private remote(port: number): Remote {
-    const value = getRemoteValidator.parse({ port }).port;
     return {
-      path: this.remotePath(value),
-      hasRemote: () => this.hasRemote(value),
+      path: this.remotePath(port),
+      hasRemote: () => this.hasRemote(port),
     };
   }
 
@@ -86,9 +64,9 @@ class Sftp {
     return `'${value.replace(/'/g, `\'"'"'`)}'`;
   }
   private remotePath(port: number): string {
-    const state = store.getState().sftp;
-    const root = remoteRootValidator.parse(state.remoteRoot);
-    return posix.join(root, `app-${port}`);
+    const { remoteRoot } = store.getState().sftp;
+    const root = remoteRootValidator.parse(remoteRoot);
+    return posix.join(root, String(port));
   }
 }
 

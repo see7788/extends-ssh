@@ -2,19 +2,19 @@
 import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 import { z } from "zod";
 
-export const remoteRootValidator = z.string().trim().min(1).refine(
+const defaultRoot = "/etc/extends-ssh/certificates";
+export const certificateRootValidator = z.string().trim().min(1).refine(
   value => value.startsWith("/") && !value.includes("\0") && !value.includes("\\") && posix.normalize(value) === value,
 );
 
-const sftpStore: ImmerStateCreator<{
-  sftp: {
-    remoteRoot: string;
+const certificateStore: ImmerStateCreator<{
+  certificate: {
+    root: string;
   };
 }> = () => ({
-  sftp: {
-    remoteRoot: "/www/wwwroot/extends-ssh",
+  certificate: {
+    root: defaultRoot,
   },
 });
 
-export default sftpStore;
-
+export default certificateStore;

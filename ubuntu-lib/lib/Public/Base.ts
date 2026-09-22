@@ -1,8 +1,4 @@
-﻿export default interface Base {
-  remoteIsRunning(): Promise<void>;
+export default abstract class Base {
+  // abstract getRemote:(op:any)=>any
+  // abstract get getRemote:Record
 }
-
-
-
-
-

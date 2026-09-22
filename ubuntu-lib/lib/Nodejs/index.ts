@@ -1,25 +1,13 @@
-﻿import mcpserver from "mcpserver";
-import { apt } from "../Apt/index.ts";
-import { ssh } from "../Ssh/index.ts";
-import type Base from "../Public/Base.ts";
-
+﻿import Base from "../public/Base.ts";
+import mcpserver from "mcpserver";
+import { apt } from "../apt/index.ts";
+import { ssh } from "../ssh/index.ts";
 const nodeVersion = "22.23.2";
 const architecture = "linux-x64";
 const sha256 = "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307";
 
-class Nodejs implements Base {
-  private runningPromise?: Promise<void>;
-
-  public remoteIsRunning(): Promise<void> {
-    if (this.runningPromise) return this.runningPromise;
-    const promise = this.ensure().finally(() => {
-      if (this.runningPromise === promise) this.runningPromise = undefined;
-    });
-    this.runningPromise = promise;
-    return promise;
-  }
-
-  private async ensure(): Promise<void> {
+class Nodejs extends Base {
+  async remoteIsRunning(): Promise<void> {
     await apt.remoteIsRunning();
     const archive = `node-v${nodeVersion}-${architecture}.tar.xz`;
     const root = `/opt/node-v${nodeVersion}-${architecture}`;

@@ -1,55 +1,40 @@
-﻿import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+﻿// 服务器环境：Ubuntu 22.04。
+// 云服务商：腾讯云。
+// 宝塔面板：https://82.156.162.242:22947/d9450c6f
+// 宝塔用户名：hazwa0sx
+// 宝塔密码：9K78s98[98]j.9
 import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import cwdPersist from "zustand-lib/cwdPersist";
 import { createStore } from "zustand/vanilla";
-import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
+import type {} from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
-import publicStore from "../Public/store.ts";
-import peerjsStore from "../Peerjs/store.ts";
-import sftpStore from "../Sftp/store.ts";
-import sshStore from "../Ssh/store.ts";
-import stunServerStore from "../StunServer/store.ts";
+import peerjsStore from "../peerjs/store.ts";
+import publicStore from "../public/store.ts";
+import sftpStore from "../sftp/store.ts";
+import sshStore from "../ssh/store.ts";
+import stunServerStore from "../stunServer/store.ts";
+import localShellStore from "../localShell/store.ts";
+import certificateStore from "../certificate/store.ts";
+import pkg from "../../package.json";
 import type { Store } from "./type.ts";
 
-const statePath = path.join(homedir(), ".extends-ssh", ".zustand", "ubuntu-lib.json");
-const storage: StateStorage = {
-  getItem: () => {
-    try { return readFileSync(statePath, "utf8"); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
-  },
-  setItem: (_name, value) => { mkdirSync(path.dirname(statePath), { recursive: true }); writeFileSync(statePath, value, "utf8"); },
-  removeItem: () => { try { rmSync(statePath); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; } },
-};
-const jsonStorage = createJSONStorage<Partial<Store>>(() => storage);
+const packageRoot = path.dirname(fileURLToPath(new URL("../../package.json", import.meta.url)));
 
-const portLocks = new Map<number, Promise<void>>();
-export function withPortLock<T>(port: number, action: () => Promise<T>): Promise<T> {
-  const previous = portLocks.get(port) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>(resolve => { release = resolve; });
-  portLocks.set(port, current);
-  return previous.catch(() => undefined).then(action).finally(() => {
-    release();
-    if (portLocks.get(port) === current) portLocks.delete(port);
-  });
-}
-
-const store = createStore<Store>()(persist(immer<Store>((...s) => ({
-  ...publicStore(...s),
-  ...peerjsStore(...s),
-  ...sftpStore(...s),
-  ...sshStore(...s),
-  ...stunServerStore(...s),
-})), {
-  name: "ubuntu-lib",
-  storage: jsonStorage,
-  version: 2,
-  migrate: persistedState => {
-    const state = persistedState as Partial<Store> & { pm2?: unknown; sshForward?: unknown };
-    delete state.pm2;
-    delete state.sshForward;
-    return state;
-  },
-}));
-
+const store = createStore<Store>()(
+  cwdPersist({
+    cwd: path.join(packageRoot, ".extends-ssh"),
+    name: pkg.name,
+    initializer: immer<Store>((...s) => ({
+      ...publicStore(...s),
+      ...sftpStore(...s),
+      ...sshStore(...s),
+      ...peerjsStore(...s),
+      ...stunServerStore(...s),
+      ...localShellStore(...s),
+      ...certificateStore(...s),
+    })),
+  }),
+);
 export default store;
-

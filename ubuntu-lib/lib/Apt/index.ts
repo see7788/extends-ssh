@@ -1,23 +1,9 @@
-﻿import mcpserver from "mcpserver";
-import { ssh } from "../Ssh/index.ts";
+﻿import Base from "../public/Base.ts";
+import mcpserver from "mcpserver";
+import { ssh } from "../ssh/index.ts";
 
-import type Base from "../Public/Base.ts";
-
-class Apt implements Base {
-  private remoteRunningPromise?: Promise<void>;
-
-  public remoteIsRunning(): Promise<void> {
-    if (this.remoteRunningPromise) return this.remoteRunningPromise;
-    const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
-      if (this.remoteRunningPromise === remoteRunningPromise) {
-        this.remoteRunningPromise = undefined;
-      }
-    });
-    this.remoteRunningPromise = remoteRunningPromise;
-    return remoteRunningPromise;
-  }
-
-  private async remoteRunningEnsure(): Promise<void> {
+class Apt extends Base {
+  async remoteIsRunning(): Promise<void> {
     await ssh.execute(`
 set -e
 test -x /usr/bin/apt-get

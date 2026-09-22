@@ -1,18 +1,20 @@
 ﻿import mcpserver from "mcpserver";
-import aptSlice from "./Apt/index.ts";
-import dockerSlice from "./Docker/index.ts";
-import sshForwardSlice from "./SshForward/index.ts";
-import nginxSlice from "./Nginx/index.ts";
-import nodejsSlice from "./Nodejs/index.ts";
-import peerjsSlice from "./Peerjs/index.ts";
-import pm2Slice from "./Pm2/index.ts";
-import sftpSlice from "./Sftp/index.ts";
-import sshSlice from "./Ssh/index.ts";
-import stunServerSlice from "./StunServer/index.ts";
+import aptSlice from "./apt/index.ts";
+import dockerSlice from "./docker/index.ts";
+import certificateSlice from "./certificate/index.ts";
+import sshForwardSlice from "./sshForward/index.ts";
+import nginxSlice from "./nginx/index.ts";
+import nodejsSlice from "./nodejs/index.ts";
+import peerjsSlice from "./peerjs/index.ts";
+import pm2Slice from "./pm2/index.ts";
+import sftpSlice from "./sftp/index.ts";
+import sshSlice from "./ssh/index.ts";
+import stunServerSlice from "./stunServer/index.ts";
 
 export default mcpserver.metas("/")
   .baseAdd(aptSlice)
   .baseAdd(dockerSlice)
+  .baseAdd(certificateSlice)
   .baseAdd(sshForwardSlice)
   .baseAdd(nginxSlice)
   .baseAdd(nodejsSlice)

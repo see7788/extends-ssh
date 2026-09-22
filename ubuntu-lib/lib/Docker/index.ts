@@ -1,24 +1,10 @@
-﻿import mcpserver from "mcpserver";
-import { apt } from "../Apt/index.ts";
-import { ssh } from "../Ssh/index.ts";
+﻿import Base from "../public/Base.ts";
+import mcpserver from "mcpserver";
+import { apt } from "../apt/index.ts";
+import { ssh } from "../ssh/index.ts";
 
-import type Base from "../Public/Base.ts";
-
-class Docker implements Base {
-  private remoteRunningPromise?: Promise<void>;
-
-  public remoteIsRunning(): Promise<void> {
-    if (this.remoteRunningPromise) return this.remoteRunningPromise;
-    const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
-      if (this.remoteRunningPromise === remoteRunningPromise) {
-        this.remoteRunningPromise = undefined;
-      }
-    });
-    this.remoteRunningPromise = remoteRunningPromise;
-    return remoteRunningPromise;
-  }
-
-  private async remoteRunningEnsure(): Promise<void> {
+class Docker extends Base {
+  async remoteIsRunning(): Promise<void> {
     await apt.remoteIsRunning();
     await ssh.execute(`
 set -e

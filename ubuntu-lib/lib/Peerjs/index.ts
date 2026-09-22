@@ -1,38 +1,14 @@
-﻿import { docker } from "../Docker/index.ts";
+﻿import Base from "../public/Base.ts";
+import { docker } from "../docker/index.ts";
 import mcpserver from "mcpserver";
-import { ssh } from "../Ssh/index.ts";
+import { ssh } from "../ssh/index.ts";
 import store from "../store/index.ts";
-import type Base from "../Public/Base.ts";
 
-
-class Peerjs implements Base {
-  private remoteRunningPromise?: Promise<void>;
-
-  public get state() {
-    const { peerjs, domain } = store.getState();
-    return {
-      host: `webrtc.${domain}`,
-      port: 443 as const,
-      path: peerjs.pathname,
-      secure: true as const,
-      key: peerjs.key,
-    };
-  }
-
-  public remoteIsRunning(): Promise<void> {
-    if (this.remoteRunningPromise) return this.remoteRunningPromise;
-    const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
-      if (this.remoteRunningPromise === remoteRunningPromise) {
-        this.remoteRunningPromise = undefined;
-      }
-    });
-    this.remoteRunningPromise = remoteRunningPromise;
-    return remoteRunningPromise;
-  }
-
-  private async remoteRunningEnsure(): Promise<void> {
-    const { peerjs } = store.getState();
-    const configuration = `${peerjs.image}|${peerjs.listenPort}|${peerjs.pathname}|${peerjs.key}`;
+class Peerjs extends Base {
+  async remoteIsRunning(): Promise<void> {
+    const { peerjs, ssh: sshState } = store.getState();
+    const { image, key, listenPort, pathname } = peerjs;
+    const configuration = `${image}|${listenPort}|${pathname}|${key}`;
     await docker.remoteIsRunning();
     await ssh.execute(`
 set -e
@@ -44,19 +20,19 @@ if docker inspect peerjs >/dev/null 2>&1; then
   fi
 fi
 if ! docker inspect peerjs >/dev/null 2>&1; then
-  docker pull ${this.shell(peerjs.image)}
+  docker pull ${this.shell(image)}
   docker run -d --restart=unless-stopped --name peerjs \
     --label ${this.shell(`extends-ssh.peerjs.configuration=${configuration}`)} \
-    -p 127.0.0.1:${peerjs.listenPort}:9000 \
-    ${this.shell(peerjs.image)} \
-    --port 9000 --path ${this.shell(peerjs.pathname)} \
-    --key ${this.shell(peerjs.key)} --proxied >/dev/null
+    -p 0.0.0.0:${listenPort}:${listenPort} \
+    ${this.shell(image)} \
+    --port ${listenPort} --path ${this.shell(pathname)} \
+    --key ${this.shell(key)} --proxied >/dev/null
 else
   docker start peerjs >/dev/null
 fi
 test "$(docker inspect -f '{{.State.Running}}' peerjs)" = true
 for attempt in $(seq 1 40); do
-  if curl --fail --silent ${this.shell(`http://127.0.0.1:${peerjs.listenPort}${peerjs.pathname}`)} \
+  if curl --fail --silent ${this.shell(`http://127.0.0.1:${listenPort}${pathname}`)} \
     | grep -q 'PeerJS'; then
     exit 0
   fi
@@ -65,13 +41,12 @@ done
 docker logs --tail 40 peerjs >&2 || true
 exit 1
 `);
-    const state = this.state;
     const health = await fetch(
-      `https://${state.host}${state.path}`,
+      `http://${sshState.host}:${listenPort}${pathname}`,
       { signal: AbortSignal.timeout(10_000) },
     );
     if (!health.ok) {
-      throw new Error(`PeerJS 公网健康检查失败: HTTP ${health.status}`);
+      throw new Error(`PeerJS 连接健康检查失败: HTTP ${health.status}`);
     }
   }
 
@@ -86,10 +61,20 @@ export default mcpserver.metas("/peerjs")
   .add({
     protocol: "tool",
     path: "/state",
-    description: "读取 PeerJS 的公开连接数据。",
+    description: "读取 PeerJS 连接配置，不表示服务已就绪。",
     schema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => peerjs.state,
+    handler: input => {
+      const { peerjs, ssh: sshState } = store.getState();
+      const { key, pathname } = peerjs;
+      return {
+        host: sshState.host,
+        port: peerjs.listenPort,
+        path: pathname,
+        secure: false as const,
+        key,
+      };
+    },
   })
   .add({
     protocol: "tool",
@@ -102,10 +87,3 @@ export default mcpserver.metas("/peerjs")
       return { ready: true };
     },
   });
-
-
-
-
-
-
-

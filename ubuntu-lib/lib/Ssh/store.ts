@@ -9,10 +9,10 @@ const sshStore: ImmerStateCreator<{
   };
 }> = () => ({
   ssh: {
-    host: process.env.EXTENDS_SSH_HOST ?? "127.0.0.1",
-    port: Number(process.env.EXTENDS_SSH_PORT ?? 22),
-    username: process.env.EXTENDS_SSH_USERNAME ?? "root",
-    password: process.env.EXTENDS_SSH_PASSWORD ?? "change-me",
+    host: "82.156.162.242",
+    port: 54321,
+    username: "root",
+    password: "9K78s98[98]j.9",
   },
 });
 
