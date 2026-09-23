@@ -13,21 +13,27 @@ const makeRemoteValidator = z.object({
   localPath: z.string().trim().min(1).refine(isAbsolute, "localPath 必须是绝对路径"),
 }).strict();
 const getRemoteValidator = z.object({ port: devPortValidator }).strict();
-type Remote = {
+type Current = {
   readonly path: string;
   hasRemote(): Promise<boolean>;
 };
 
-class Sftp extends Base {
+class Sftp extends Base<(input: z.infer<typeof makeRemoteValidator>) => Promise<Current>> {
+  readonly current = this.makeRemote.bind(this);
+
   protected async remoteIsRunning(): Promise<void> {
     await ssh.execute("true");
   }
-  async getRemote(port: number): Promise<Remote> {
+  async getRemote(port: number): Promise<Current> {
+    await this.remoteIsRunning();
     if (!await this.hasRemote(port)) {
       throw new Error(`开发端口尚未分配 SFTP 远程目录: ${port}`);
     }
-    return this.remote(port);
-  }
+    return {
+      path: this.remotePath(port),
+      hasRemote: () => this.hasRemote(port),
+    };
+  };
   async hasRemote(port: number): Promise<boolean> {
     const remotePath = this.remotePath(port);
     await this.remoteIsRunning();
@@ -35,9 +41,12 @@ class Sftp extends Base {
     const result = await ssh.execute(`test -f ${this.shell(markerPath)} && cat ${this.shell(markerPath)} || true`);
     return result.stdout.trim() === String(port);
   }
-  async makeRemote(input: z.infer<typeof makeRemoteValidator>): Promise<Remote> {
+  async makeRemote(input: z.infer<typeof makeRemoteValidator>): Promise<Current> {
     await this.makeRemoteEnsure(input);
-    return this.remote(input.port);
+    return {
+      path: this.remotePath(input.port),
+      hasRemote: () => this.hasRemote(input.port),
+    };
   }
   private async makeRemoteEnsure(value: z.infer<typeof makeRemoteValidator>): Promise<void> {
     await this.remoteIsRunning();
@@ -48,16 +57,10 @@ class Sftp extends Base {
     const owner = marker.stdout.trim();
     if (owner === "__occupied__") throw new Error(`远程目录已被其他资源占用: ${remotePath}`);
     if (owner && owner !== key) throw new Error(`远程目录已被开发端口 ${owner} 占用: ${remotePath}`);
-    const uploaded = await ssh.client.putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true });
+    const { client } = await ssh.current();
+    const uploaded = await client.putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true });
     if (!uploaded) throw new Error(`远程目录同步失败: ${remotePath}`);
     await ssh.execute(`printf %s ${this.shell(key)} > ${this.shell(markerPath)}`);
-  }
-
-  private remote(port: number): Remote {
-    return {
-      path: this.remotePath(port),
-      hasRemote: () => this.hasRemote(port),
-    };
   }
 
   private shell(value: string): string {
@@ -73,7 +76,7 @@ class Sftp extends Base {
 export const sftp = new Sftp();
 
 export default mcpserver.metas("/sftp")
-  .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口建立并首次同步远程应用目录。", schema: makeRemoteValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sftp.makeRemote(input); return { path: remote.path }; } })
+  .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口建立并首次同步远程应用目录。", schema: makeRemoteValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sftp.current(input); return { path: remote.path }; } })
   .add({ protocol: "tool", path: "/hasRemote", description: "检查开发端口对应的远程应用目录是否已分配。", schema: getRemoteValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await sftp.hasRemote(input.port) }) })
   .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的远程应用目录。", schema: getRemoteValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sftp.getRemote(input.port); return { path: remote.path }; } });
 

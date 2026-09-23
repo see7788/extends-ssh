@@ -22,8 +22,24 @@ type PortState = {
   occupied: boolean;
   listeners: PortListener[];
 };
-class Ssh extends Base {
-  readonly client = new NodeSSH();
+type Current = {
+  readonly client: NodeSSH;
+  execute(command: z.infer<typeof sshExecuteValidator>["command"]): Promise<SSHExecCommandResponse>;
+  hasPort(port: number): Promise<PortState>;
+  dispose(): void;
+};
+
+class Ssh extends Base<() => Promise<Current>> {
+  private readonly client = new NodeSSH();
+  readonly current = async (): Promise<Current> => {
+    await this.remoteIsRunning();
+    return {
+      client: this.client,
+      execute: command => this.execute(command),
+      hasPort: port => this.hasPort(port),
+      dispose: () => this.dispose(),
+    };
+  };
   protected async remoteIsRunning(): Promise<void> {
     if (!this.client.isConnected()) {
       await this.client.connect(store.getState().ssh);

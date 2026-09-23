@@ -10,13 +10,19 @@ const hostnameValidator = z.string().trim().toLowerCase()
   .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i);
 const inputValidator = z.object({ hostname: hostnameValidator }).strict();
 
-type CertificatePaths = {
+type Current = {
   readonly certPath: string;
   readonly keyPath: string;
 };
 
-class Certificate extends Base {
-  async ensure(hostname: string): Promise<CertificatePaths> {
+class Certificate extends Base<(hostname: string) => Promise<Current>> {
+  readonly current = this.ensure.bind(this);
+
+  protected async remoteIsRunning(): Promise<void> {
+    await ssh.execute("true");
+  }
+  async ensure(hostname: string): Promise<Current> {
+    await this.remoteIsRunning();
     const value = hostnameValidator.parse(hostname);
     const root = certificateRootValidator.parse(store.getState().certificate.root);
     const base = posix.join(root, value);
@@ -48,5 +54,5 @@ export default mcpserver.metas("/certificate").add({
   description: "为指定域名生成并确保可用的自签名 TLS 证书。",
   schema: inputValidator.shape,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  handler: async input => await certificate.ensure(input.hostname),
+  handler: async input => await certificate.current(input.hostname),
 });

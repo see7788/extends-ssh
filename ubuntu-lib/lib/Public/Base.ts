@@ -1,4 +1,4 @@
-export default abstract class Base {
-  // abstract getRemote:(op:any)=>any
-  // abstract get getRemote:Record
+﻿export default abstract class Base<T> {
+  protected abstract remoteIsRunning(): Promise<void>;
+  abstract readonly current: T;
 }

@@ -1,18 +1,27 @@
 ﻿import Base from "../public/Base.ts";
 import mcpserver from "mcpserver";
-import { apt } from "../apt/index.ts";
 import { ssh } from "../ssh/index.ts";
+
 const nodeVersion = "22.23.2";
 const architecture = "linux-x64";
 const sha256 = "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307";
 
-class Nodejs extends Base {
-  async remoteIsRunning(): Promise<void> {
-    await apt.remoteIsRunning();
+type Current = () => Promise<void>;
+
+class Nodejs extends Base<Current> {
+  readonly current: Current = async () => {
+    await this.remoteIsRunning();
+  };
+
+  protected async remoteIsRunning(): Promise<void> {
     const archive = `node-v${nodeVersion}-${architecture}.tar.xz`;
     const root = `/opt/node-v${nodeVersion}-${architecture}`;
     const shell = (value: string) => `'${value.replace(/'/g, `\'"'"'`)}'`;
     await ssh.execute(`set -e
+if ! command -v curl >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then
+  apt-get update -qq
+  apt-get install -y -qq --no-install-recommends curl ca-certificates tar xz-utils >/dev/null
+fi
 if [ ! -x ${shell(`${root}/bin/node`)} ]; then
   cd /tmp
   rm -f ${shell(archive)}
@@ -35,12 +44,8 @@ export default mcpserver.metas("/nodejs").add({
   description: "确保远端 Node.js 运行环境可用。",
   schema: {},
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  handler: async () => { await nodejs.remoteIsRunning(); return { ready: true }; },
+  handler: async () => {
+    await nodejs.current();
+    return { ready: true };
+  },
 });
-
-
-
-
-
-
-

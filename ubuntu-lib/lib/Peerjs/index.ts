@@ -4,12 +4,32 @@ import mcpserver from "mcpserver";
 import { ssh } from "../ssh/index.ts";
 import store from "../store/index.ts";
 
-class Peerjs extends Base {
-  async remoteIsRunning(): Promise<void> {
+type Current = {
+  readonly host: string;
+  readonly port: number;
+  readonly path: string;
+  readonly secure: false;
+  readonly key: string;
+};
+
+class Peerjs extends Base<() => Promise<Current>> {
+  readonly current = async (): Promise<Current> => {
+    await this.remoteIsRunning();
+    const { peerjs, ssh: sshState } = store.getState();
+    return {
+      host: sshState.host,
+      port: peerjs.listenPort,
+      path: peerjs.pathname,
+      secure: false,
+      key: peerjs.key,
+    };
+  };
+
+  protected async remoteIsRunning(): Promise<void> {
     const { peerjs, ssh: sshState } = store.getState();
     const { image, key, listenPort, pathname } = peerjs;
     const configuration = `${image}|${listenPort}|${pathname}|${key}`;
-    await docker.remoteIsRunning();
+    await docker.current();
     await ssh.execute(`
 set -e
 docker info >/dev/null
@@ -61,20 +81,10 @@ export default mcpserver.metas("/peerjs")
   .add({
     protocol: "tool",
     path: "/state",
-    description: "读取 PeerJS 连接配置，不表示服务已就绪。",
+    description: "确保并读取 PeerJS 连接配置。",
     schema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => {
-      const { peerjs, ssh: sshState } = store.getState();
-      const { key, pathname } = peerjs;
-      return {
-        host: sshState.host,
-        port: peerjs.listenPort,
-        path: pathname,
-        secure: false as const,
-        key,
-      };
-    },
+    handler: async () => peerjs.current(),
   })
   .add({
     protocol: "tool",
@@ -82,8 +92,8 @@ export default mcpserver.metas("/peerjs")
     description: "检查并确保远端 PeerJS 服务处于可用状态。",
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await peerjs.remoteIsRunning();
+    handler: async () => {
+      await peerjs.current();
       return { ready: true };
     },
   });

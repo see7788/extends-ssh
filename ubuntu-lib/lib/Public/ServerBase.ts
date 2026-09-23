@@ -1,5 +1,4 @@
-﻿import Base from "./Base.ts";
-import type { Plugin } from "vite";
+﻿import type { Plugin } from "vite";
 import { z } from "zod";
 import { nginx } from "../nginx/index.ts";
 import { peerjs } from "../peerjs/index.ts";
@@ -7,20 +6,19 @@ import { pm2 } from "../pm2/index.ts";
 import { sftp } from "../sftp/index.ts";
 import { sshForward } from "../sshForward/index.ts";
 import { stunServer } from "../stunServer/index.ts";
-import store from "../store/index.ts";
 
-type Pm2Input = Omit<Parameters<typeof pm2.makeRemote>[0], "port">;
+// ServerBase 只编排基础能力，不承担远端资源契约。
+type Pm2Input = Omit<Parameters<typeof pm2.current>[0], "port">;
 
 const devPortValidator = z.number().int().min(1).max(65_535);
 
-export class ServerBase extends Base {
+export class ServerBase {
   protected readonly devPort: z.infer<typeof devPortValidator>;
   protected projectPath = "";
   readonly plugin: Plugin[] = [];
 
   constructor(devPort: number) {
-    super();
-    this.devPort = devPort;
+    this.devPort = devPortValidator.parse(devPort);
     this.plugin.push({
       name: "baseserver" + this.devPort + ":register",
       config: () => ({
@@ -40,7 +38,7 @@ export class ServerBase extends Base {
     this.plugin.push({
       name: "baseserver" + this.devPort + ":pm2",
       closeBundle: async () => {
-        await pm2.makeRemote({ ...input, port: this.devPort });
+        await pm2.current({ ...input, port: this.devPort });
       },
     });
     return this;
@@ -52,7 +50,7 @@ export class ServerBase extends Base {
       name: "baseserver" + this.devPort + ":sftp",
       closeBundle: async () => {
         if (!this.projectPath) throw new Error("Vite 项目根目录尚未解析");
-        await sftp.makeRemote({ port: this.devPort, localPath: this.projectPath });
+        await sftp.current({ port: this.devPort, localPath: this.projectPath });
       },
     });
     return this;
@@ -63,7 +61,7 @@ export class ServerBase extends Base {
     this.plugin.push({
       name: "baseserver" + this.devPort + ":ssh-forward",
       configureServer: async () => {
-        await sshForward.makeRemote(this.devPort);
+        await sshForward.current(this.devPort);
       },
       closeBundle: async () => {
         await sshForward.closeRemote(this.devPort);
@@ -77,7 +75,7 @@ export class ServerBase extends Base {
     this.plugin.push({
       name: "baseserver" + this.devPort + ":nginx",
       configureServer: async () => {
-        await nginx.makePortRemote(this.devPort);
+        await nginx.current(this.devPort);
       },
       closeBundle: async () => {
         await nginx.closeRemote(this.devPort);
@@ -92,7 +90,7 @@ export class ServerBase extends Base {
       name: "baseserver" + this.devPort + ":nginx-path",
       closeBundle: async () => {
         const remote = await sftp.getRemote(this.devPort);
-        await nginx.makePathRemote(remote.path);
+        await nginx.current(remote.path);
       },
     });
     return this;
@@ -103,17 +101,10 @@ export class ServerBase extends Base {
     this.plugin.push({
       name: "baseserver" + this.devPort + ":peerjs",
       config: async () => {
-        await peerjs.remoteIsRunning();
-        const { peerjs: peerjsState, ssh: sshState } = store.getState();
+        const remote = await peerjs.current();
         return {
           define: {
-            "globalThis.WEBRTC_PEERJS": JSON.stringify({
-              host: sshState.host,
-              port: peerjsState.listenPort,
-              path: peerjsState.pathname,
-              secure: false,
-              key: peerjsState.key,
-            }),
+            "globalThis.WEBRTC_PEERJS": JSON.stringify(remote),
           },
         };
       },
@@ -126,11 +117,11 @@ export class ServerBase extends Base {
     this.plugin.push({
       name: "baseserver" + this.devPort + ":stun-server",
       config: async () => {
-        await stunServer.remoteIsRunning();
-        const { ssh, stunServer: stunState } = store.getState();
+        const remote = await stunServer.current();
+        const scheme = remote.secure ? "stuns" : "stun";
         return {
           define: {
-            "globalThis.WEBRTC_STUN_URL": JSON.stringify(`stun:${ssh.host}:${stunState.port}`),
+            "globalThis.WEBRTC_STUN_URL": JSON.stringify(`${scheme}:${remote.host}:${remote.port}`),
           },
         };
       },

@@ -2,8 +2,14 @@
 import mcpserver from "mcpserver";
 import { ssh } from "../ssh/index.ts";
 
-class Apt extends Base {
-  async remoteIsRunning(): Promise<void> {
+type Current = () => Promise<void>;
+
+class Apt extends Base<Current> {
+  readonly current: Current = async () => {
+    await this.remoteIsRunning();
+  };
+
+  protected async remoteIsRunning(): Promise<void> {
     await ssh.execute(`
 set -e
 test -x /usr/bin/apt-get
@@ -32,13 +38,8 @@ export default mcpserver.metas("/apt").add({
   description: "检查并补齐远端系统所需的 Apt 基础组件。",
   schema: {},
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  handler: async input => {
-    await apt.remoteIsRunning();
+  handler: async () => {
+    await apt.current();
     return { ready: true };
   },
 });
-
-
-
-
-
