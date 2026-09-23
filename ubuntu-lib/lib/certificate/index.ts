@@ -16,12 +16,12 @@ type Current = {
 };
 
 class Certificate extends Base<(hostname: string) => Promise<Current>> {
-  readonly current = this.ensure.bind(this);
+  readonly current = this.makeRemote.bind(this);
 
   protected async remoteIsRunning(): Promise<void> {
     await ssh.execute("true");
   }
-  async ensure(hostname: string): Promise<Current> {
+  async makeRemote(hostname: string): Promise<Current> {
     await this.remoteIsRunning();
     const value = hostnameValidator.parse(hostname);
     const root = certificateRootValidator.parse(store.getState().certificate.root);

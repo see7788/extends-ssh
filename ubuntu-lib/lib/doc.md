@@ -26,7 +26,7 @@ lib/
 │   │   │   ├── readonly keyPath: string;
 │   │   │   └── };
 │   │   ├── readonly current: (hostname: string) => Promise<Current>;
-│   │   └── ensure(hostname: string): Promise<Current>;
+│   │   └── makeRemote(hostname: string): Promise<Current>;
 │   └── store.ts<ImmerStateCreator<{ certificate: { root: string } }>>
 ├── docker/
 │   └── index.ts<Base<Current>>
