@@ -5,6 +5,7 @@ import { z } from "zod";
 import { posix } from "node:path";
 import store from "../store/index.ts";
 import { ssh } from "../ssh/index.ts";
+import { sftp } from "../sftp/index.ts";
 
 const devPortValidator = z.number().int().min(1).max(65_535);
 const inputValidator = z.object({ port: devPortValidator }).strict();
@@ -21,14 +22,16 @@ class Nginx extends Base {
     await ssh.execute("set -e; command -v nginx >/dev/null 2>&1 || apt-get install -y -qq --no-install-recommends nginx >/dev/null; systemctl enable nginx --now >/dev/null; ufw allow 80/tcp >/dev/null 2>&1 || true; ufw allow 443/tcp >/dev/null 2>&1 || true; nginx -t");
   }
   async getRemote(port: number): Promise<Remote> {
-    if (!await this.hasRemote(port)) {
-      throw new Error(`开发端口尚未分配 Nginx 远程路由: ${port}`);
+    const value = inputValidator.parse({ port }).port;
+    if (!await this.hasRemote(value)) {
+      throw new Error(`???????? Nginx ????: ${value}`);
     }
-    return this.remote(port);
+    return this.remote(value);
   }
   async hasRemote(port: number): Promise<boolean> {
-    const subdomain = this.remoteDescription(port);
-    const configPath = `/etc/nginx/sites-enabled/extends-ssh-${port}`;
+    const value = inputValidator.parse({ port }).port;
+    const subdomain = this.remoteDescription(value);
+    const configPath = `/etc/nginx/sites-enabled/extends-ssh-${value}`;
     await ssh.execute("true");
     const result = await ssh.execute(`if [ -f ${this.shell(configPath)} ] \
   && grep -Fq -- ${this.shell(`server_name ${subdomain};`)} ${this.shell(configPath)} \
@@ -36,9 +39,10 @@ class Nginx extends Base {
     return result.stdout.trim() === "true";
   }
   async makePortRemote(port: number): Promise<Remote> {
+    const value = inputValidator.parse({ port }).port;
     await this.remoteIsRunning();
-    await this.writeRemote(port, `  location / { proxy_pass http://127.0.0.1:${port}; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }`);
-    return this.remote(port);
+    await this.writeRemote(value, `  location / { proxy_pass http://127.0.0.1:${value}; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }`);
+    return this.remote(value);
   }
   async makePathRemote(path: string): Promise<Remote> {
     const value = pathValidator.parse(path);
@@ -46,6 +50,8 @@ class Nginx extends Base {
     const port = Number(basename);
     if (String(port) !== basename) throw new Error(`远程路径末段必须是开发端口: ${value}`);
     const validPort = devPortValidator.parse(port);
+    const remote = await sftp.getRemote(validPort);
+    if (remote.path !== value) throw new Error(`?????????? ${validPort} ? SFTP ??: ${value}`);
     await this.remoteIsRunning();
     await this.writeRemote(validPort, `  location / { root ${value}; index index.html; try_files $uri $uri/ =404; }`);
     return this.remote(validPort);
@@ -74,8 +80,9 @@ nginx -t
 systemctl reload nginx`);
   }
   async closeRemote(port: number): Promise<void> {
+    const value = inputValidator.parse({ port }).port;
     await this.remoteIsRunning();
-    await ssh.execute(`rm -f /etc/nginx/sites-enabled/extends-ssh-${port} /etc/nginx/sites-available/extends-ssh-${port}; nginx -t && systemctl reload nginx`);
+    await ssh.execute(`rm -f /etc/nginx/sites-enabled/extends-ssh-${value} /etc/nginx/sites-available/extends-ssh-${value}; nginx -t && systemctl reload nginx`);
   }
   private remote(port: number): Remote {
     return {
