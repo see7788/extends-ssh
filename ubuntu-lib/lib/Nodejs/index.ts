@@ -1,10 +1,7 @@
 ﻿import Base from "../public/Base.ts";
+import store from "../store/index.ts";
 import mcpserver from "mcpserver";
 import { ssh } from "../ssh/index.ts";
-
-const nodeVersion = "22.23.2";
-const architecture = "linux-x64";
-const sha256 = "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307";
 
 type Current = () => Promise<void>;
 
@@ -14,8 +11,9 @@ class Nodejs extends Base<Current> {
   };
 
   protected async remoteIsRunning(): Promise<void> {
-    const archive = `node-v${nodeVersion}-${architecture}.tar.xz`;
-    const root = `/opt/node-v${nodeVersion}-${architecture}`;
+    const { version, architecture, sha256 } = store.getState().nodejs;
+    const archive = `node-v${version}-${architecture}.tar.xz`;
+    const root = store.getState().nodejs.root;
     const shell = (value: string) => `'${value.replace(/'/g, `\'"'"'`)}'`;
     await ssh.execute(`set -e
 if ! command -v curl >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then
@@ -25,10 +23,11 @@ fi
 if [ ! -x ${shell(`${root}/bin/node`)} ]; then
   cd /tmp
   rm -f ${shell(archive)}
-  curl -fL --connect-timeout 15 --max-time 180 --retry 2 -o ${shell(archive)} "https://nodejs.org/download/release/v${nodeVersion}/${archive}"
+  curl -fL --connect-timeout 15 --max-time 180 --retry 2 -o ${shell(archive)} "https://nodejs.org/download/release/v${version}/${archive}"
   printf '%s  %s\\n' ${sha256} ${shell(archive)} | sha256sum -c -
   rm -rf ${shell(root)}
-  tar -xJf ${shell(archive)} -C /opt
+  mkdir -p ${shell(root)}
+  tar -xJf ${shell(archive)} --strip-components=1 -C ${shell(root)}
   rm -f ${shell(archive)}
 fi
 for command in node npm npx corepack; do ln -sfn ${shell(`${root}/bin`)}"/$command" "/usr/local/bin/$command"; done

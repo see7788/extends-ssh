@@ -5,6 +5,8 @@ import type sftpStore from "../sftp/store.ts";
 import type sshStore from "../ssh/store.ts";
 import type stunServerStore from "../stunServer/store.ts";
 import type localShellStore from "../localShell/store.ts";
+import type nginxStore from "../nginx/store.ts";
+import type nodejsStore from "../nodejs/store.ts";
 
 export type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof certificateStore>
@@ -13,3 +15,5 @@ export type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof sshStore>
   & ReturnType<typeof stunServerStore>
   & ReturnType<typeof localShellStore>
+  & ReturnType<typeof nginxStore>
+  & ReturnType<typeof nodejsStore>

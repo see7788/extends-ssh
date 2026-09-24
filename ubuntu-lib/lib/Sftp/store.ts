@@ -1,10 +1,5 @@
-﻿import { posix } from "node:path";
-import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
-import { z } from "zod";
+﻿import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 
-export const remoteRootValidator = z.string().trim().min(1).refine(
-  value => value.startsWith("/") && !value.includes("\0") && !value.includes("\\") && posix.normalize(value) === value,
-);
 
 const sftpStore: ImmerStateCreator<{
   sftp: {
@@ -17,4 +12,3 @@ const sftpStore: ImmerStateCreator<{
 });
 
 export default sftpStore;
-

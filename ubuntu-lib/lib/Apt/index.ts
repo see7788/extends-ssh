@@ -12,7 +12,7 @@ class Apt extends Base<Current> {
   protected async remoteIsRunning(): Promise<void> {
     await ssh.execute(`
 set -e
-test -x /usr/bin/apt-get
+command -v apt-get >/dev/null 2>&1
 export DEBIAN_FRONTEND=noninteractive
 PACKAGES="lsof net-tools unzip wget ufw sudo curl git ca-certificates gnupg lsb-release xz-utils iproute2"
 MISSING=""

@@ -16,6 +16,8 @@ import sftpStore from "../sftp/store.ts";
 import sshStore from "../ssh/store.ts";
 import stunServerStore from "../stunServer/store.ts";
 import localShellStore from "../localShell/store.ts";
+import nginxStore from "../nginx/store.ts";
+import nodejsStore from "../nodejs/store.ts";
 import certificateStore from "../certificate/store.ts";
 import pkg from "../../package.json";
 import type { Store } from "./type.ts";
@@ -33,6 +35,8 @@ const store = createStore<Store>()(
       ...peerjsStore(...s),
       ...stunServerStore(...s),
       ...localShellStore(...s),
+      ...nginxStore(...s),
+      ...nodejsStore(...s),
       ...certificateStore(...s),
     })),
   }),

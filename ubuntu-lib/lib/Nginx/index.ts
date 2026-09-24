@@ -42,10 +42,10 @@ class Nginx extends Base<(input: number | string) => Promise<Current>> {
     await this.remoteIsRunning();
     const value = inputValidator.parse({ port }).port;
     const subdomain = this.remoteDescription(value);
-    const configPath = `/etc/nginx/sites-enabled/extends-ssh-${value}`;
-    const result = await ssh.execute(`if [ -f ${this.shell(configPath)} ] \
-  && grep -Fq -- ${this.shell(`server_name ${subdomain};`)} ${this.shell(configPath)} \
-  && grep -Fq -- ${this.shell("listen 443 ssl;")} ${this.shell(configPath)}; then printf true; else printf false; fi`);
+    const { enabled } = this.sitePaths(value);
+    const result = await ssh.execute(`if [ -f ${this.shell(enabled)} ] \
+  && grep -Fq -- ${this.shell(`server_name ${subdomain};`)} ${this.shell(enabled)} \
+  && grep -Fq -- ${this.shell("listen 443 ssl;")} ${this.shell(enabled)}; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
   async makeRemote(input: number | string): Promise<Current> {
@@ -73,9 +73,10 @@ class Nginx extends Base<(input: number | string) => Promise<Current>> {
   }
   private async writeRemote(value: number, location: string): Promise<void> {
     const subdomain = this.remoteDescription(value);
+    const { available, enabled } = this.sitePaths(value);
     const certificatePaths = await certificate.current(subdomain);
     await ssh.execute(`set -e
-cat > /etc/nginx/sites-available/extends-ssh-${value} <<'NGINX'
+cat > ${this.shell(available)} <<'NGINX'
 server {
   listen 80;
   server_name ${subdomain};
@@ -90,14 +91,22 @@ server {
 ${location}
 }
 NGINX
-ln -sfn /etc/nginx/sites-available/extends-ssh-${value} /etc/nginx/sites-enabled/extends-ssh-${value}
+ln -sfn ${this.shell(available)} ${this.shell(enabled)}
 nginx -t
 systemctl reload nginx`);
   }
   async closeRemote(port: number): Promise<void> {
     await this.remoteIsRunning();
     const value = inputValidator.parse({ port }).port;
-    await ssh.execute(`rm -f /etc/nginx/sites-enabled/extends-ssh-${value} /etc/nginx/sites-available/extends-ssh-${value}; nginx -t && systemctl reload nginx`);
+    const { available, enabled } = this.sitePaths(value);
+    await ssh.execute(`rm -f ${this.shell(enabled)} ${this.shell(available)}; nginx -t && systemctl reload nginx`);
+  }
+  private sitePaths(port: number): { available: string; enabled: string } {
+    const { sitesAvailableRoot, sitesEnabledRoot } = store.getState().nginx;
+    return {
+      available: `${sitesAvailableRoot}/${port}`,
+      enabled: `${sitesEnabledRoot}/${port}`,
+    };
   }
   private shell(value: string): string { return `'${value.replace(/'/g, `\'"'"'`)}'`; }
   private remoteDescription(port: number): string {

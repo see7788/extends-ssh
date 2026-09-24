@@ -1,10 +1,8 @@
 ﻿import Base from "../public/Base.ts";
-import { posix } from "node:path";
 import mcpserver from "mcpserver";
 import { z } from "zod";
 import { ssh } from "../ssh/index.ts";
 import store from "../store/index.ts";
-import { certificateRootValidator } from "./store.ts";
 
 const hostnameValidator = z.string().trim().toLowerCase()
   .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i);
@@ -24,8 +22,7 @@ class Certificate extends Base<(hostname: string) => Promise<Current>> {
   async makeRemote(hostname: string): Promise<Current> {
     await this.remoteIsRunning();
     const value = hostnameValidator.parse(hostname);
-    const root = certificateRootValidator.parse(store.getState().certificate.root);
-    const base = posix.join(root, value);
+    const base = `${store.getState().certificate.root}/${value}`;
     const certPath = `${base}/fullchain.pem`;
     const keyPath = `${base}/privkey.pem`;
     const shell = (item: string) => `'${item.replace(/'/g, `\'"'"'`)}'`;

@@ -15,29 +15,21 @@ type PortListener = {
   port: number;
   pid?: number;
   process?: string;
-  project?: string;
   path?: string;
 };
 type PortState = {
   occupied: boolean;
   listeners: PortListener[];
 };
-type Current = {
-  readonly client: NodeSSH;
-  execute(command: z.infer<typeof sshExecuteValidator>["command"]): Promise<SSHExecCommandResponse>;
-  hasPort(port: number): Promise<PortState>;
-  dispose(): void;
-};
+type Current = Pick<NodeSSH, "putDirectory" | "forwardIn">;
 
 class Ssh extends Base<() => Promise<Current>> {
   private readonly client = new NodeSSH();
   readonly current = async (): Promise<Current> => {
     await this.remoteIsRunning();
     return {
-      client: this.client,
-      execute: command => this.execute(command),
-      hasPort: port => this.hasPort(port),
-      dispose: () => this.dispose(),
+      putDirectory: this.client.putDirectory.bind(this.client),
+      forwardIn: this.client.forwardIn.bind(this.client),
     };
   };
   protected async remoteIsRunning(): Promise<void> {
@@ -92,7 +84,6 @@ printf "%s\n%s" "$path" "$command"
       const [path, command] = process.stdout.split(/\r?\n/);
       if (path) {
         listener.path = path;
-        listener.project = path.split("/").filter(Boolean).at(-1);
       }
       if (!listener.process && command) listener.process = command.trim();
     }));

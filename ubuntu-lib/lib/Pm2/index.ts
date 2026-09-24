@@ -39,7 +39,7 @@ class Pm2 extends Base<(input: z.infer<typeof processValidator>) => Promise<Curr
       throw new Error(`开发端口尚未分配 PM2 进程: ${value}`);
     }
     return {
-      name: this.remoteDescription(value),
+      name: String(value),
       hasRemote: () => this.hasRemote(value),
       refresh: () => this.refresh(value),
       stop: () => this.stop(value),
@@ -54,7 +54,7 @@ class Pm2 extends Base<(input: z.infer<typeof processValidator>) => Promise<Curr
     if (current !== "running" && await this.remotePortIsListening(value.port)) {
       throw new Error(`开发端口已被其他远程服务占用: ${value.port}`);
     }
-    const name = this.remoteDescription(value.port);
+    const name = String(value.port);
     const environment = Object.entries(value.environment ?? {}).map(([key, item]) => `${key}=${this.shell(item)}`).join(" ");
     await ssh.execute(`set -e
 pm2 delete ${this.shell(name)} >/dev/null 2>&1 || true
@@ -62,7 +62,7 @@ cd ${this.shell(value.path)}
 ${environment} pm2 start bash --name ${this.shell(name)} -- -lc ${this.shell(value.command)}
 pm2 save --force >/dev/null`);
     return {
-      name: this.remoteDescription(value.port),
+      name,
       hasRemote: () => this.hasRemote(value.port),
       refresh: () => this.refresh(value.port),
       stop: () => this.stop(value.port),
@@ -76,7 +76,7 @@ pm2 save --force >/dev/null`);
     const result = await ssh.execute("pm2 jlist");
     const list: unknown = JSON.parse(result.stdout);
     if (!Array.isArray(list)) throw new Error("PM2 未返回进程数组");
-    const item = list.find((entry): entry is { name?: unknown; pm2_env?: { status?: unknown } } => typeof entry === "object" && entry !== null && (entry as { name?: unknown }).name === this.remoteDescription(value));
+    const item = list.find((entry): entry is { name?: unknown; pm2_env?: { status?: unknown } } => typeof entry === "object" && entry !== null && (entry as { name?: unknown }).name === String(value));
     const status = item?.pm2_env?.status;
     return status === "online" ? "running" : item ? "stopped" : "missing";
   }
@@ -86,19 +86,19 @@ pm2 save --force >/dev/null`);
   async stop(port: number): Promise<void> {
     const value = inputValidator.parse({ port }).port;
     await this.remoteIsRunning();
-    const name = this.shell(this.remoteDescription(value));
+    const name = this.shell(String(value));
     await ssh.execute(`pm2 stop ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   async restart(port: number): Promise<void> {
     const value = inputValidator.parse({ port }).port;
     await this.remoteIsRunning();
-    const name = this.shell(this.remoteDescription(value));
+    const name = this.shell(String(value));
     await ssh.execute(`pm2 restart ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   async closeRemote(port: number): Promise<void> {
     const value = inputValidator.parse({ port }).port;
     await this.remoteIsRunning();
-    const name = this.shell(this.remoteDescription(value));
+    const name = this.shell(String(value));
     await ssh.execute(`pm2 delete ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   private async remotePortIsListening(port: number): Promise<boolean> {
@@ -106,9 +106,6 @@ pm2 save --force >/dev/null`);
     return result.stdout.trim() === "true";
   }
   private shell(value: string): string { return "'" + value.replace(/'/g, "'\"'\"'") + "'"; }
-  private remoteDescription(port: number): string {
-    return String(port);
-  }
 }
 
 export const pm2 = new Pm2();

@@ -1,11 +1,10 @@
 ﻿import Base from "../public/Base.ts";
-import { isAbsolute, posix } from "node:path";
+import { isAbsolute } from "node:path";
 import mcpserver from "mcpserver";
 import { z } from "zod";
 
 import store from "../store/index";
 import { ssh } from "../ssh/index";
-import { remoteRootValidator } from "./store";
 
 const devPortValidator = z.number().int().min(1).max(65_535);
 const makeRemoteValidator = z.object({
@@ -37,7 +36,7 @@ class Sftp extends Base<(input: z.infer<typeof makeRemoteValidator>) => Promise<
   async hasRemote(port: number): Promise<boolean> {
     const remotePath = this.remotePath(port);
     await this.remoteIsRunning();
-    const markerPath = posix.join(remotePath, ".extends-ssh-port");
+    const markerPath = `${remotePath}/.extends-ssh-port`;
     const result = await ssh.execute(`test -f ${this.shell(markerPath)} && cat ${this.shell(markerPath)} || true`);
     return result.stdout.trim() === String(port);
   }
@@ -52,13 +51,13 @@ class Sftp extends Base<(input: z.infer<typeof makeRemoteValidator>) => Promise<
     await this.remoteIsRunning();
     const remotePath = this.remotePath(value.port);
     const key = String(value.port);
-    const markerPath = posix.join(remotePath, ".extends-ssh-port");
+    const markerPath = `${remotePath}/.extends-ssh-port`;
     const marker = await ssh.execute(`if [ -e ${this.shell(remotePath)} ]; then if [ -f ${this.shell(markerPath)} ]; then cat ${this.shell(markerPath)}; else printf __occupied__; fi; fi`);
     const owner = marker.stdout.trim();
     if (owner === "__occupied__") throw new Error(`远程目录已被其他资源占用: ${remotePath}`);
     if (owner && owner !== key) throw new Error(`远程目录已被开发端口 ${owner} 占用: ${remotePath}`);
-    const { client } = await ssh.current();
-    const uploaded = await client.putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true });
+    const { putDirectory } = await ssh.current();
+    const uploaded = await putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true });
     if (!uploaded) throw new Error(`远程目录同步失败: ${remotePath}`);
     await ssh.execute(`printf %s ${this.shell(key)} > ${this.shell(markerPath)}`);
   }
@@ -67,9 +66,7 @@ class Sftp extends Base<(input: z.infer<typeof makeRemoteValidator>) => Promise<
     return `'${value.replace(/'/g, `\'"'"'`)}'`;
   }
   private remotePath(port: number): string {
-    const { remoteRoot } = store.getState().sftp;
-    const root = remoteRootValidator.parse(remoteRoot);
-    return posix.join(root, String(port));
+    return `${store.getState().sftp.remoteRoot}/${port}`;
   }
 }
 

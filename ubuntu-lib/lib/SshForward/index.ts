@@ -63,8 +63,8 @@ class SshForward extends Base<(port: number) => Promise<Current>> {
     if (await this.remotePortIsListening(port)) {
       throw new Error(`开发端口已被远程服务占用: ${port}`);
     }
-    const { client } = await ssh.current();
-    const handle = await client.forwardIn("0.0.0.0", port, (_details, accept, reject) => {
+    const { forwardIn } = await ssh.current();
+    const handle = await forwardIn("0.0.0.0", port, (_details, accept, reject) => {
       const local = net.createConnection({ host: "127.0.0.1", port });
       const failed = () => { local.destroy(); reject(); };
       local.once("error", failed);

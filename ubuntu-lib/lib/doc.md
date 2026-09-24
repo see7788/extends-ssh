@@ -7,11 +7,10 @@ lib/
 │   ├── ServerBase.ts<ServerBase>
 │   │   ├── constructor(devPort: number);
 │   │   ├── readonly plugin: Plugin[];
-│   │   ├── addPm2(input: Pm2Input): this;
-│   │   ├── addSftp(): this;
-│   │   ├── addSshForward(): this;
-│   │   ├── addNginxPort(): this;
-│   │   ├── addNginxPath(): this;
+│   │   ├── readonly define: { peerjs?: Awaited<ReturnType<typeof peerjs.current>>; stunServer?: Awaited<ReturnType<typeof stunServer.current>> };
+│   │   ├── addPm2(input: Pm2Input & { addNginx?: boolean }): this;
+│   │   ├── addSftp(input?: { addNginx?: boolean }): this;
+│   │   ├── addSshForward(input?: { addNginx?: boolean }): this;
 │   │   ├── addPeerjs(): this;
 │   │   └── addStunServer(): this;
 │   └── store.ts<ImmerStateCreator<{ domain: string }>>
@@ -35,21 +34,23 @@ lib/
 ├── localShell/
 │   └── store.ts<ImmerStateCreator<{ localShellActions: { hasPort(port: number): Promise<boolean> } }>>
 ├── nginx/
-│   └── index.ts<Base<(input: number | string) => Promise<Current>>>
-│       ├── type Current = {
-│       │   ├── readonly subdomain: string;
-│       │   ├── hasRemote(): Promise<boolean>;
-│       │   ├── close(): Promise<void>;
-│       │   └── };
-│       ├── readonly current: (input: number | string) => Promise<Current>;
-│       ├── getRemote(port: number): Promise<Current>;
-│       ├── hasRemote(port: number): Promise<boolean>;
-│       ├── makeRemote(input: number | string): Promise<Current>;
-│       └── closeRemote(port: number): Promise<void>;
+│   ├── index.ts<Base<(input: number | string) => Promise<Current>>>
+│   │   ├── type Current = {
+│   │   │   ├── readonly subdomain: string;
+│   │   │   ├── hasRemote(): Promise<boolean>;
+│   │   │   ├── close(): Promise<void>;
+│   │   │   └── };
+│   │   ├── readonly current: (input: number | string) => Promise<Current>;
+│   │   ├── getRemote(port: number): Promise<Current>;
+│   │   ├── hasRemote(port: number): Promise<boolean>;
+│   │   ├── makeRemote(input: number | string): Promise<Current>;
+│   │   └── closeRemote(port: number): Promise<void>;
+│   └── store.ts<ImmerStateCreator<{ nginx: { sitesAvailableRoot: string; sitesEnabledRoot: string } }>>
 ├── nodejs/
-│   └── index.ts<Base<Current>>
-│       ├── type Current = () => Promise<void>;
-│       └── readonly current: Current;
+│   ├── index.ts<Base<Current>>
+│   │   ├── type Current = () => Promise<void>;
+│   │   └── readonly current: Current;
+│   └── store.ts<ImmerStateCreator<{ nodejs: { root: string; version: string; architecture: string; sha256: string } }>>
 ├── peerjs/
 │   ├── index.ts<Base<() => Promise<Current>>>
 │   │   ├── type Current = {
@@ -68,15 +69,15 @@ lib/
 │       │   ├── path: string;
 │       │   ├── command: string;
 │       │   ├── environment?: Record<string, string>;
-│       │   └── };
+│   │   │   └── };
 │       ├── type Current = {
 │       │   ├── readonly name: string;
 │       │   ├── hasRemote(): Promise<boolean>;
 │       │   ├── refresh(): Promise<"missing" | "stopped" | "running">;
 │       │   ├── stop(): Promise<void>;
 │       │   ├── restart(): Promise<void>;
-│       │   ├── close(): Promise<void>;
-│       │   └── };
+│   │   │   ├── close(): Promise<void>;
+│   │   │   └── };
 │       ├── readonly current: (input: Pm2Input) => Promise<Current>;
 │       ├── getRemote(port: number): Promise<Current>;
 │       ├── makeRemote(input: Pm2Input): Promise<Current>;
@@ -84,7 +85,7 @@ lib/
 │       ├── hasRemote(port: number): Promise<boolean>;
 │       ├── stop(port: number): Promise<void>;
 │       ├── restart(port: number): Promise<void>;
-│       └── closeRemote(port: number): Promise<void>;
+│   │   └── closeRemote(port: number): Promise<void>;
 ├── sftp/
 │   ├── index.ts<Base<(input: SftpInput) => Promise<Current>>>
 │   │   ├── type SftpInput = {
@@ -115,12 +116,7 @@ lib/
 │   │   │   ├── occupied: boolean;
 │   │   │   ├── listeners: PortListener[];
 │   │   │   └── };
-│   │   ├── type Current = {
-│   │   │   ├── readonly client: NodeSSH;
-│   │   │   ├── execute(command: string): Promise<SSHExecCommandResponse>;
-│   │   │   ├── hasPort(port: number): Promise<PortState>;
-│   │   │   ├── dispose(): void;
-│   │   │   └── };
+│   │   ├── type Current = Pick<NodeSSH, "putDirectory" | "forwardIn">;
 │   │   ├── readonly current: () => Promise<Current>;
 │   │   ├── execute(command: string): Promise<SSHExecCommandResponse>;
 │   │   ├── hasPort(port: number): Promise<PortState>;
@@ -130,13 +126,13 @@ lib/
 │   └── index.ts<Base<(port: number) => Promise<Current>>>
 │       ├── type Current = {
 │       │   ├── readonly remotePort: number;
-│       │   ├── hasRemote(): Promise<boolean>;
-│       │   ├── close(): Promise<void>;
-│       │   └── };
+│   │   │   ├── hasRemote(): Promise<boolean>;
+│   │   │   ├── close(): Promise<void>;
+│   │   │   └── };
 │       ├── readonly current: (port: number) => Promise<Current>;
 │       ├── makeRemote(port: number): Promise<Current>;
-│       ├── getRemote(port: number): Promise<Current>;
-│       ├── hasRemote(port: number): Promise<boolean>;
+│   │   ├── getRemote(port: number): Promise<Current>;
+│   │   ├── hasRemote(port: number): Promise<boolean>;
 │       ├── closeRemote(port: number): Promise<void>;
 │       └── dispose(): Promise<void>;
 ├── stunServer/
