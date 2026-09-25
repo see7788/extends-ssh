@@ -1,267 +1,118 @@
-import { nodejs } from "../Nodejs/index.ts";
+﻿import Base from "../public/Base.ts";
 import mcpserver from "mcpserver";
-import { ssh } from "../Ssh/index.ts";
 import { z } from "zod";
 
-const idValidator = z.object({
-  id: z.number().int().min(0),
-}).strict();
-const processIsRemoteRunningValidator = z.object({
-  name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
-  path: z.string().trim().min(1),
+import { nodejs } from "../nodejs/index.ts";
+import { ssh } from "../ssh/index.ts";
+
+const devPortValidator = z.number().int().min(1).max(65_535);
+const cwdValidator = z.string().trim().min(1).refine(value => value.startsWith("/") && !value.includes("\0") && !value.includes("\\"), "cwd 必须是 Linux 绝对路径");
+
+const portValidator = devPortValidator;
+const processValidator = z.object({
+  port: portValidator,
+  cwd: cwdValidator,
   command: z.string().trim().min(1),
-  port: z.number().int().min(1).max(65_535),
-  environment: z.record(
-    z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
-    z.string(),
-  ).optional(),
+  environment: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string()).optional(),
 }).strict();
-const processRemoteCloseValidator = z.object({
-  name: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
-}).strict();
-
-type IdInput = z.infer<typeof idValidator>;
-
-type Pm2ProcessState = {
-  id: number;
-  name: string;
-  pid: number;
-  status: string;
-  restarts: number;
-  startedAt?: string;
-  script?: string;
-  cwd?: string;
+const inputValidator = z.object({ port: devPortValidator }).strict();
+type Current = {
+  readonly name: string;
+  hasRemote(): Promise<boolean>;
+  refresh(): Promise<"missing" | "stopped" | "running">;
+  stop(): Promise<void>;
+  restart(): Promise<void>;
+  close(): Promise<void>;
 };
 
-type Pm2JsonProcess = {
-  name?: unknown;
-  pid?: unknown;
-  pm_id?: unknown;
-  pm2_env?: {
-    status?: unknown;
-    restart_time?: unknown;
-    pm_uptime?: unknown;
-    pm_exec_path?: unknown;
-    pm_cwd?: unknown;
-  };
-};
+class Pm2 extends Base<(input: z.infer<typeof processValidator>) => Promise<Current>> {
+  readonly current = this.makeRemote.bind(this);
 
-import type Base from "../Public/Base.ts";
-
-class Pm2 implements Base {
-  private remoteRunningPromise?: Promise<void>;
-
-  public readonly state: {
-    host: string;
-    status: "unknown" | "running";
-    processes: Pm2ProcessState[];
-    updatedAt?: string;
-  } = {
-    host: "",
-    status: "unknown",
-    processes: [],
-  };
-
-  public async isRunning(): Promise<typeof this.state> {
-    await this.isRemoteRunning();
-    return this.refresh();
-  }
-
-  public async refresh(): Promise<typeof this.state> {
-    const result = await ssh.execute("pm2 jlist");
-    const payload: unknown = JSON.parse(result.stdout);
-    if (!Array.isArray(payload)) throw new TypeError("PM2 jlist 未返回进程数组");
-    this.state.host = ssh.state.host;
-    this.state.status = "running";
-    this.state.processes = payload.map((value, index) => this.processParse(value, index));
-    this.state.updatedAt = new Date().toISOString();
-    return this.state;
-  }
-
-  public async stop(input: IdInput): Promise<typeof this.state> {
-    const value = idValidator.parse(input);
-    await this.isRemoteRunning();
-    await ssh.execute(`pm2 stop ${String(value.id)} && pm2 save --force >/dev/null`);
-    return this.refresh();
-  }
-
-  public async restart(input: IdInput): Promise<typeof this.state> {
-    const value = idValidator.parse(input);
-    await this.isRemoteRunning();
-    await ssh.execute(`pm2 restart ${String(value.id)} && pm2 save --force >/dev/null`);
-    return this.refresh();
-  }
-
-  public dispose(): void {
-    this.state.status = "unknown";
-  }
-
-  public isRemoteRunning(): Promise<void> {
-    if (this.remoteRunningPromise) return this.remoteRunningPromise;
-    const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
-      if (this.remoteRunningPromise === remoteRunningPromise) {
-        this.remoteRunningPromise = undefined;
-      }
+  protected remoteIsRunning(): Promise<void> {
+    return this.ensureRemoteIsRunning(async () => {
+      await nodejs.current();
+      await ssh.execute("set -e; if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi; pm2 ping >/dev/null; pm2 save --force >/dev/null");
     });
-    this.remoteRunningPromise = remoteRunningPromise;
-    return remoteRunningPromise;
   }
-
-  /** 启动远端 PM2 进程，并确认该进程树监听指定端口。 */
-  public async processIsRemoteRunning(process: z.infer<typeof processIsRemoteRunningValidator>): Promise<void> {
-    const input = processIsRemoteRunningValidator.parse(process);
-    await this.isRemoteRunning();
-    const environment = Object.entries(input.environment ?? {})
-      .map(([key, value]) => `${key}=${this.shell(value)}`)
-      .join(" ");
-    await ssh.execute(`
-set -e
-pm2 delete ${this.shell(input.name)} >/dev/null 2>&1 || true
-cd ${this.shell(input.path)}
-${environment} pm2 start bash --name ${this.shell(input.name)} -- -lc ${this.shell(input.command)}
-pm2 save --force >/dev/null
-for attempt in $(seq 1 20); do
-  ROOT_PID=$(pm2 pid ${this.shell(input.name)})
-  if [ -n "$ROOT_PID" ] && [ "$ROOT_PID" != 0 ]; then
-    PIDS="$ROOT_PID"
-    CURRENT="$ROOT_PID"
-    while [ -n "$CURRENT" ]; do
-      CHILDREN=""
-      for PID in $CURRENT; do CHILDREN="$CHILDREN $(pgrep -P "$PID" 2>/dev/null || true)"; done
-      PIDS="$PIDS $CHILDREN"
-      CURRENT="$CHILDREN"
-    done
-    for PID in $PIDS; do
-      if lsof -Pan -p "$PID" -iTCP:${input.port} -sTCP:LISTEN >/dev/null 2>&1; then exit 0; fi
-    done
-  fi
-  sleep 0.5
-done
-pm2 logs ${this.shell(input.name)} --lines 40 --nostream >&2 || true
-echo ${this.shell(`PM2 进程未监听端口 ${input.port}: ${input.name}`)} >&2
-exit 1
-`);
-  }
-
-  /** 停止远端 PM2 进程。 */
-  public async processRemoteClose(input: z.infer<typeof processRemoteCloseValidator>): Promise<void> {
-    const value = processRemoteCloseValidator.parse(input);
-    await ssh.isRemoteRunning();
-    await ssh.execute(`
-if command -v pm2 >/dev/null 2>&1; then
-  pm2 delete ${this.shell(value.name)} >/dev/null 2>&1 || true
-  pm2 save --force >/dev/null 2>&1 || true
-fi
-`);
-  }
-
-  private async remoteRunningEnsure(): Promise<void> {
-    await nodejs.isRemoteRunning();
-    await ssh.execute(`
-set -e
-if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi
-PM2="$(command -v pm2)"
-test -x "$PM2"
-if [ "$PM2" != /usr/local/bin/pm2 ]; then
-  ln -sfn "$PM2" /usr/local/bin/pm2
-fi
-pm2 ping >/dev/null
-pm2 startup systemd -u root --hp /root >/dev/null
-pm2 save --force >/dev/null
-systemctl enable pm2-root >/dev/null
-systemctl is-enabled --quiet pm2-root
-pm2 --version >/dev/null
-`);
-  }
-
-  private processParse(value: unknown, index: number): Pm2ProcessState {
-    if (!value || typeof value !== "object") {
-      throw new TypeError(`PM2 进程 ${String(index)} 不是对象`);
-    }
-    const process = value as Pm2JsonProcess;
-    const environment = process.pm2_env;
-    if (
-      !Number.isInteger(process.pm_id)
-      || typeof process.name !== "string"
-      || typeof process.pid !== "number"
-      || !environment
-      || typeof environment.status !== "string"
-    ) {
-      throw new TypeError(`PM2 进程 ${String(index)} 缺少必要运行数据`);
+  async getRemote(port: number): Promise<Current> {
+    await this.remoteIsRunning();
+    if (!await this.hasRemote(port)) {
+      throw new Error(`开发端口尚未分配 PM2 进程: ${port}`);
     }
     return {
-      id: process.pm_id as number,
-      name: process.name,
-      pid: process.pid,
-      status: environment.status,
-      restarts: typeof environment.restart_time === "number" ? environment.restart_time : 0,
-      startedAt: typeof environment.pm_uptime === "number"
-        ? new Date(environment.pm_uptime).toISOString()
-        : undefined,
-      script: typeof environment.pm_exec_path === "string" ? environment.pm_exec_path : undefined,
-      cwd: typeof environment.pm_cwd === "string" ? environment.pm_cwd : undefined,
+      name: String(port),
+      hasRemote: () => this.hasRemote(port),
+      refresh: () => this.refresh(port),
+      stop: () => this.stop(port),
+      restart: () => this.restart(port),
+      close: () => this.closeRemote(port),
+    };
+  };
+  async makeRemote(input: z.infer<typeof processValidator>): Promise<Current> {
+    await this.remoteIsRunning();
+    const current = await this.refresh(input.port);
+    if (current !== "running" && await this.remotePortIsListening(input.port)) {
+      throw new Error(`开发端口已被其他远程服务占用: ${input.port}`);
+    }
+    const name = String(input.port);
+    const environment = Object.entries(input.environment ?? {}).map(([key, item]) => `${key}=${this.shell(item)}`).join(" ");
+    await ssh.execute(`set -e
+pm2 delete ${this.shell(name)} >/dev/null 2>&1 || true
+cd ${this.shell(input.cwd)}
+${environment} pm2 start bash --name ${this.shell(name)} -- -lc ${this.shell(input.command)}
+pm2 save --force >/dev/null`);
+    return {
+      name,
+      hasRemote: () => this.hasRemote(input.port),
+      refresh: () => this.refresh(input.port),
+      stop: () => this.stop(input.port),
+      restart: () => this.restart(input.port),
+      close: () => this.closeRemote(input.port),
     };
   }
-
-  private shell(value: string): string {
-    return `'${value.replace(/'/g, `'"'"'`)}'`;
+  async refresh(port: number): Promise<"missing" | "stopped" | "running"> {
+    await this.remoteIsRunning();
+    const result = await ssh.execute("pm2 jlist");
+    const list: unknown = JSON.parse(result.stdout);
+    if (!Array.isArray(list)) throw new Error("PM2 未返回进程数组");
+    const item = list.find((entry): entry is { name?: unknown; pm2_env?: { status?: unknown } } => typeof entry === "object" && entry !== null && (entry as { name?: unknown }).name === String(port));
+    const status = item?.pm2_env?.status;
+    return status === "online" ? "running" : item ? "stopped" : "missing";
   }
+  async hasRemote(port: number): Promise<boolean> {
+    const result = await ssh.execute(`if command -v pm2 >/dev/null 2>&1 && pm2 describe ${this.shell(String(port))} >/dev/null 2>&1; then printf true; else printf false; fi`);
+    return result.stdout.trim() === "true";
+  }
+  async stop(port: number): Promise<void> {
+    await this.remoteIsRunning();
+    const name = this.shell(String(port));
+    await ssh.execute(`pm2 stop ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
+  }
+  async restart(port: number): Promise<void> {
+    await this.remoteIsRunning();
+    const name = this.shell(String(port));
+    await ssh.execute(`pm2 restart ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
+  }
+  async closeRemote(port: number): Promise<void> {
+    await this.remoteIsRunning();
+    const name = this.shell(String(port));
+    await ssh.execute(`pm2 delete ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
+  }
+  private async remotePortIsListening(port: number): Promise<boolean> {
+    const result = await ssh.execute(`ss -ltnH | awk '$4 ~ /(^|:)${port}$/ { found=1 } END { print found ? "true" : "false" }'`);
+    return result.stdout.trim() === "true";
+  }
+  private shell(value: string): string { return "'" + value.replace(/'/g, "'\"'\"'") + "'"; }
 }
 
 export const pm2 = new Pm2();
+const server = mcpserver.metas("/pm2");
+server.add({ protocol: "tool", path: "/makeRemote", description: "按开发端口、工作目录和命令创建远端 PM2 进程。", schema: processValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await pm2.current(input); return { name: remote.name }; } });
+server.add({ protocol: "tool", path: "/hasRemote", description: "检查端口对应的 PM2 进程是否已存在。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await pm2.hasRemote(input.port) }) });
+server.add({ protocol: "tool", path: "/getRemote", description: "检查并读取端口对应的 PM2 进程标识。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await pm2.getRemote(input.port); return { name: remote.name }; } });
+server.add({ protocol: "tool", path: "/refresh", description: "刷新端口对应的 PM2 进程状态。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: input => pm2.refresh(input.port) });
+server.add({ protocol: "tool", path: "/stop", description: "停止端口对应的 PM2 进程。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await pm2.stop(input.port); return { stopped: true }; } });
+server.add({ protocol: "tool", path: "/restart", description: "重启端口对应的 PM2 进程。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await pm2.restart(input.port); return { restarted: true }; } });
+server.add({ protocol: "tool", path: "/closeRemote", description: "关闭端口对应的 PM2 进程。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await pm2.closeRemote(input.port); return { closed: true }; } });
 
-export default mcpserver.metas("/pm2")
-  .add({
-    protocol: "tool",
-    path: "/state",
-    description: "读取当前缓存的 PM2 进程状态。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => pm2.state,
-  })
-  .add({
-    protocol: "tool",
-    path: "/refresh",
-    description: "从远端重新读取 PM2 进程并刷新状态。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => await pm2.refresh(),
-  })
-  .add({
-    protocol: "tool",
-    path: "/stop",
-    description: "按 PM2 进程编号停止一个远端进程。",
-    schema: idValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => await pm2.stop(input),
-  })
-  .add({
-    protocol: "tool",
-    path: "/restart",
-    description: "按 PM2 进程编号重启一个远端进程。",
-    schema: idValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => await pm2.restart(input),
-  })
-  .add({
-    protocol: "tool",
-    path: "/processIsRemoteRunning",
-    description: "按名称启动 PM2 进程，并验证目标端口已可用。",
-    schema: processIsRemoteRunningValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await pm2.processIsRemoteRunning(input);
-      return { started: true };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/processRemoteClose",
-    description: "按名称停止一个远端 PM2 进程。",
-    schema: processRemoteCloseValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await pm2.processRemoteClose(input);
-      return { stopped: true };
-    },
-  });
+export default server;

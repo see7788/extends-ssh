@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    "./README.md": "./README.md",
-    "./*.ts": "./*.ts"
+    "./serverRoot/index.ts": "./serverRoot/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

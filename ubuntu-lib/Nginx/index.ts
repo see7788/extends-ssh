@@ -1,255 +1,123 @@
-import { apt } from "../Apt/index.ts";
+﻿import Base from "../public/Base.ts";
+import { certificate } from "../certificate/index.ts";
 import mcpserver from "mcpserver";
-import { ssh } from "../Ssh/index.ts";
-import store from "../store/index.ts";
 import { z } from "zod";
+import { posix } from "node:path";
+import store from "../store/index.ts";
+import { ssh } from "../ssh/index.ts";
 
-const nameValidator = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
-const hostnameValidator = z.string().trim().toLowerCase()
-  .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i);
-const pathnameValidator = z.string().trim()
-  .regex(/^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]*$/)
-  .transform(pathname => pathname as `/${string}`);
-const linuxAbsolutePathValidator = z.string().trim()
-  .regex(/^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]+$/);
-const portValidator = z.number().int().min(1).max(65_535);
+const devPortValidator = z.number().int().min(1).max(65_535);
+const inputValidator = z.object({ port: devPortValidator }).strict();
+const pathValidator = z.string().trim()
+  .regex(/^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]+$/, "path 必须是 Linux 绝对路径")
+  .refine(value => {
+    const basename = posix.basename(value);
+    const port = Number(basename);
+    return String(port) === basename && Number.isInteger(port) && port >= 1 && port <= 65_535;
+  }, "path 末段必须是 1-65535 的开发端口");
+const makeInputValidator = z.object({
+  port: devPortValidator.optional(),
+  path: pathValidator.optional(),
+}).strict().refine(input => (input.port === undefined) !== (input.path === undefined), "port 与 path 必须二选一");
 
-const proxyRouteIsRunningValidator = z.object({
-  name: nameValidator,
-  hostname: hostnameValidator,
-  pathname: pathnameValidator,
-  upstreamPort: portValidator,
-}).strict();
-const staticRouteIsRunningValidator = z.object({
-  name: nameValidator,
-  hostname: hostnameValidator,
-  pathname: pathnameValidator,
-  root: linuxAbsolutePathValidator,
-  spaFallback: z.boolean(),
-}).strict();
-const routeCloseValidator = z.object({
-  name: nameValidator,
-  hostname: hostnameValidator,
-}).strict();
+type Current = {
+  readonly subdomain: string;
+  hasRemote(): Promise<boolean>;
+  close(): Promise<void>;
+};
+class Nginx extends Base<(input: number | string) => Promise<Current>> {
+  readonly current = this.makeRemote.bind(this);
 
-
-import type Base from "../Public/Base.ts";
-
-class Nginx implements Base {
-  private remoteRunningPromise?: Promise<void>;
-
-  public get state() {
-    const domain = hostnameValidator.parse(store.getState().domain);
+  protected remoteIsRunning(): Promise<void> {
+    return this.ensureRemoteIsRunning(async () => {
+      await ssh.execute("set -e; export DEBIAN_FRONTEND=noninteractive; if ! command -v nginx >/dev/null 2>&1; then apt-get update -qq; apt-get install -y -qq --no-install-recommends nginx >/dev/null; fi; systemctl enable nginx --now >/dev/null; ufw allow 80/tcp >/dev/null 2>&1 || true; ufw allow 443/tcp >/dev/null 2>&1 || true; nginx -t");
+    });
+  }
+  async getRemote(port: number): Promise<Current> {
+    await this.remoteIsRunning();
+    if (!await this.hasRemote(port)) {
+      throw new Error(`开发端口尚未分配 Nginx 远程路由: ${port}`);
+    }
     return {
-      domain,
-      httpPort: 80 as const,
-      httpsPort: 443 as const,
-      secure: true as const,
+      subdomain: this.remoteDescription(port),
+      hasRemote: () => this.hasRemote(port),
+      close: () => this.closeRemote(port),
+    };
+  };
+  async hasRemote(port: number): Promise<boolean> {
+    const subdomain = this.remoteDescription(port);
+    const { enabled } = this.sitePaths(port);
+    const result = await ssh.execute(`if [ -f ${this.shell(enabled)} ] \
+  && grep -Fq -- ${this.shell(`server_name ${subdomain};`)} ${this.shell(enabled)} \
+  && grep -Fq -- ${this.shell("listen 443 ssl;")} ${this.shell(enabled)}; then printf true; else printf false; fi`);
+    return result.stdout.trim() === "true";
+  }
+  async makeRemote(input: number | string): Promise<Current> {
+    await this.remoteIsRunning();
+    if (typeof input === "number") {
+      const port = input;
+      await this.writeRemote(port, `  location / { proxy_pass http://127.0.0.1:${port}; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }`);
+      return {
+        subdomain: this.remoteDescription(port),
+        hasRemote: () => this.hasRemote(port),
+        close: () => this.closeRemote(port),
+      };
+    }
+    const path = input;
+    const basename = posix.basename(path);
+    const port = Number(basename);
+    await this.writeRemote(port, `  location / { root ${path}; index index.html; try_files $uri $uri/ =404; }`);
+    return {
+      subdomain: this.remoteDescription(port),
+      hasRemote: () => this.hasRemote(port),
+      close: () => this.closeRemote(port),
     };
   }
-
-  public isRemoteRunning(): Promise<void> {
-    if (this.remoteRunningPromise) return this.remoteRunningPromise;
-    const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
-      if (this.remoteRunningPromise === remoteRunningPromise) {
-        this.remoteRunningPromise = undefined;
-      }
-    });
-    this.remoteRunningPromise = remoteRunningPromise;
-    return remoteRunningPromise;
-  }
-
-  public async proxyRouteIsRunning(route: z.infer<typeof proxyRouteIsRunningValidator>): Promise<void> {
-    const { name, hostname, pathname, upstreamPort } = proxyRouteIsRunningValidator.parse(route);
-    const proxyConfiguration = `
-    proxy_pass http://127.0.0.1:${upstreamPort};
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";`;
-    await this.routeWrite({
-      name,
-      hostname,
-      configuration: pathname === "/"
-        ? `  location / {${proxyConfiguration}
-  }`
-        : `  location = ${pathname} {${proxyConfiguration}
-  }
-  location ^~ ${pathname}/ {${proxyConfiguration}
-  }`,
-    });
-  }
-
-  public async staticRouteIsRunning(route: z.infer<typeof staticRouteIsRunningValidator>): Promise<void> {
-    const { name, hostname, pathname, root, spaFallback } = staticRouteIsRunningValidator.parse(route);
-    const fallback = spaFallback
-      ? pathname === "/" ? "/index.html" : `${pathname}/index.html`
-      : "=404";
-    await this.routeWrite({
-      name,
-      hostname,
-      configuration: `  location ^~ ${pathname} {
-    root ${root};
-    try_files $uri $uri/ ${fallback};
-  }`,
-    });
-  }
-
-  public async routeClose(route: z.infer<typeof routeCloseValidator>): Promise<void> {
-    const { name, hostname } = routeCloseValidator.parse(route);
-    await this.isRemoteRunning();
-    await ssh.execute(`
-set -e
-rm -f ${this.shell(this.routePath(hostname, name))} ${this.shell(this.legacyPath(name))}
-/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
-/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf
-`);
-  }
-
-  private async remoteRunningEnsure(): Promise<void> {
-    await apt.isRemoteRunning();
-    await ssh.execute(`
-set -e
-NGINX=/www/server/nginx/sbin/nginx
-test -x "$NGINX"
-pgrep -f 'nginx: master process' >/dev/null
-mkdir -p /var/www/certbot /www/server/panel/vhost/nginx/extends-ssh-routes
-if ! command -v certbot >/dev/null 2>&1; then
-  apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot >/dev/null
-fi
-ufw allow 80/tcp >/dev/null
-ufw allow 443/tcp >/dev/null
-ufw reload >/dev/null
-`);
-  }
-
-  private async routeWrite(route: {
-    name: string;
-    hostname: string;
-    configuration: string;
-  }): Promise<void> {
-    await this.isRemoteRunning();
-    const hostnamePath = this.hostnamePath(route.hostname);
-    const routeDirectory = this.routeDirectory(route.hostname);
-    await ssh.execute(`
-set -e
-mkdir -p ${this.shell(routeDirectory)}
-rm -f ${this.shell(this.legacyPath(route.name))}
-cat > ${this.shell(this.routePath(route.hostname, route.name))} <<'ROUTE'
-${route.configuration}
-ROUTE
-if [ ! -f ${this.shell(`/etc/letsencrypt/live/${route.hostname}/fullchain.pem`)} ]; then
-  cat > ${this.shell(hostnamePath)} <<'HTTP'
+  private async writeRemote(value: number, location: string): Promise<void> {
+    const subdomain = this.remoteDescription(value);
+    const { available, enabled } = this.sitePaths(value);
+    const certificatePaths = await certificate.current(subdomain);
+    await ssh.execute(`set -e
+cat > ${this.shell(available)} <<'NGINX'
 server {
   listen 80;
-  server_name ${route.hostname};
-  location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
-  location / { return 404; }
-}
-HTTP
-  /www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
-  /www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf
-  certbot certonly --webroot -w /var/www/certbot -d ${route.hostname} \
-    --non-interactive --agree-tos --register-unsafely-without-email
-fi
-cat > ${this.shell(hostnamePath)} <<'HTTPS'
-server {
-  listen 80;
-  server_name ${route.hostname};
-  location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
+  server_name ${subdomain};
   location / { return 301 https://$host$request_uri; }
 }
 server {
   listen 443 ssl;
-  server_name ${route.hostname};
-  ssl_certificate /etc/letsencrypt/live/${route.hostname}/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/${route.hostname}/privkey.pem;
+  server_name ${subdomain};
+  ssl_certificate ${certificatePaths.certPath};
+  ssl_certificate_key ${certificatePaths.keyPath};
   ssl_protocols TLSv1.2 TLSv1.3;
-  include ${routeDirectory}/*.conf;
+${location}
 }
-HTTPS
-/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
-/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf
-`);
+NGINX
+ln -sfn ${this.shell(available)} ${this.shell(enabled)}
+nginx -t
+systemctl reload nginx`);
   }
-
-  private hostnamePath(hostname: string): string {
-    return `/www/server/panel/vhost/nginx/extends-ssh-${hostname}.conf`;
+  async closeRemote(port: number): Promise<void> {
+    await this.remoteIsRunning();
+    const { available, enabled } = this.sitePaths(port);
+    await ssh.execute(`rm -f ${this.shell(enabled)} ${this.shell(available)}; nginx -t && systemctl reload nginx`);
   }
-
-  private routeDirectory(hostname: string): string {
-    return `/www/server/panel/vhost/nginx/extends-ssh-routes/${hostname}`;
+  private sitePaths(port: number): { available: string; enabled: string } {
+    const { sitesAvailableRoot, sitesEnabledRoot } = store.getState().nginx;
+    return {
+      available: `${sitesAvailableRoot}/${port}`,
+      enabled: `${sitesEnabledRoot}/${port}`,
+    };
   }
-
-  private routePath(hostname: string, name: string): string {
-    return `${this.routeDirectory(hostname)}/${name}.conf`;
-  }
-
-  private legacyPath(name: string): string {
-    return `/www/server/panel/vhost/nginx/extends-ssh-${name}.conf`;
-  }
-
-  private shell(value: string): string {
-    return `'${value.replace(/'/g, `'"'"'`)}'`;
+  private shell(value: string): string { return `'${value.replace(/'/g, `\'"'"'`)}'`; }
+  private remoteDescription(port: number): string {
+    return `${port}.${store.getState().domain}`;
   }
 }
 
 export const nginx = new Nginx();
-
 export default mcpserver.metas("/nginx")
-  .add({
-    protocol: "tool",
-    path: "/state",
-    description: "读取 Nginx 的公开访问状态。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => nginx.state,
-  })
-  .add({
-    protocol: "tool",
-    path: "/ensure",
-    description: "检查远端 Nginx，缺少时完成安装与基础配置。",
-    schema: {},
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await nginx.isRemoteRunning();
-      return { ready: true };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/proxyRouteIsRunning",
-    description: "写入并启用指定域名、路径与目标端口的 Nginx 反向代理路由。",
-    schema: proxyRouteIsRunningValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await nginx.proxyRouteIsRunning(input);
-      return { configured: true };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/staticRouteIsRunning",
-    description: "写入并启用指定域名、路径与静态目录的 Nginx 静态资源路由。",
-    schema: staticRouteIsRunningValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await nginx.staticRouteIsRunning(input);
-      return { configured: true };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/routeClose",
-    description: "关闭并移除指定名称与域名的 Nginx 路由。",
-    schema: routeCloseValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await nginx.routeClose(input);
-      return { closed: true };
-    },
-  });
+  .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口或远程目录写入 HTTPS Nginx 路由；域名 DNS 需指向 SSH 主机。", schema: makeInputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const value = makeInputValidator.parse(input); const remote = await nginx.current(value.port ?? value.path!); return { subdomain: remote.subdomain }; } })
+  .add({ protocol: "tool", path: "/hasRemote", description: "检查开发端口对应的 HTTPS Nginx 路由是否已写入。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await nginx.hasRemote(input.port) }) })
+  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的 HTTPS Nginx 路由配置。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await nginx.getRemote(input.port); return { subdomain: remote.subdomain }; } })
+  .add({ protocol: "tool", path: "/closeRemote", description: "关闭开发端口对应的 HTTPS Nginx 路由。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await nginx.closeRemote(input.port); return { closed: true }; } });

@@ -1,3 +1,4 @@
+﻿import Base from "../public/Base.ts";
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
 import mcpserver from "mcpserver";
 import { z } from "zod";
@@ -6,64 +7,49 @@ import store from "../store/index.ts";
 const sshExecuteValidator = z.object({
   command: z.string().trim().min(1),
 }).strict();
+const portValidator = z.object({ port: z.number().int().min(1).max(65_535) }).strict();
 
+type PortListener = {
+  protocol: "tcp" | "udp";
+  address: string;
+  port: number;
+  pid?: number;
+  process?: string;
+  path?: string;
+};
+type PortState = {
+  occupied: boolean;
+  listeners: PortListener[];
+};
+type Current = Pick<NodeSSH, "putDirectory" | "forwardIn">;
 
-import type Base from "../Public/Base.ts";
-
-class Ssh implements Base {
-  public readonly client = new NodeSSH();
-  private readonly connection = {
-    isConnected: false,
-    revision: 0,
+class Ssh extends Base<() => Promise<Current>> {
+  private readonly client = new NodeSSH();
+  private connectPromise?: Promise<void>;
+  readonly current = async (): Promise<Current> => {
+    await this.remoteIsRunning();
+    return {
+      putDirectory: this.client.putDirectory.bind(this.client),
+      forwardIn: this.client.forwardIn.bind(this.client),
+    };
   };
-  private runningPromise?: Promise<void>;
-
-  public get state() {
-    const { host, port, username, password } = store.getState().ssh;
-    return { host, port, username, password };
-  }
-
-  public get revision(): number {
-    return this.connection.revision;
-  }
-
-  public async isRemoteRunning(): Promise<void> {
-    if (this.runningPromise) return this.runningPromise;
-    const runningPromise = this.runningEnsure().finally(() => {
-      if (this.runningPromise === runningPromise) {
-        this.runningPromise = undefined;
-      }
-    });
-    this.runningPromise = runningPromise;
-    return runningPromise;
-  }
-
-  private async runningEnsure(): Promise<void> {
-    if (this.connection.isConnected) {
-      try {
-        const execution = await this.client.execCommand("true");
-        if (execution.code === 0) return;
-      } catch {
-        this.client.dispose();
-      }
-      this.connection.isConnected = false;
+  protected async remoteIsRunning(): Promise<void> {
+    if (this.client.isConnected()) return;
+    if (!this.connectPromise) {
+      this.connectPromise = this.client.connect(store.getState().ssh).then(() => undefined).finally(() => {
+        this.connectPromise = undefined;
+      });
     }
-    await this.client.connect(this.state);
-    const execution = await this.client.execCommand("true");
-    if (execution.code !== 0) {
-      this.client.dispose();
-      throw new Error(
-        `SSH 连接验证失败 (${String(execution.code)}): ${execution.stderr || execution.stdout}`,
-      );
-    }
-    this.connection.isConnected = true;
-    this.connection.revision += 1;
+    await this.connectPromise;
   }
 
-  public async execute(command: z.infer<typeof sshExecuteValidator>["command"]): Promise<SSHExecCommandResponse> {
-    const input = sshExecuteValidator.parse({ command });
-    await this.isRemoteRunning();
-    const execution = await this.client.execCommand(input.command);
+  async hasRemote(): Promise<boolean> {
+    return this.client.isConnected();
+  }
+
+  async execute(command: z.infer<typeof sshExecuteValidator>["command"]): Promise<SSHExecCommandResponse> {
+    await this.remoteIsRunning();
+    const execution = await this.client.execCommand(command);
     if (execution.code !== 0) {
       throw new Error(
         `远程命令失败 (${String(execution.code)})\n${execution.stderr || execution.stdout}`,
@@ -72,16 +58,62 @@ class Ssh implements Base {
     return execution;
   }
 
-  public dispose(): void {
+  async hasPort(port: number): Promise<PortState> {
+    const result = await this.execute(`
+set +e
+ss -H -ltnp | awk \\$4 ~ /(^|:)${port}\\$/ { print "tcp\t" \\$0 }
+ss -H -lunp | awk \\$4 ~ /(^|:)${port}\\$/ { print "udp\t" \\$0 }
+`);
+    const listeners = result.stdout
+      .split(/\r?\n/)
+      .map(line => {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 6 || (parts[0] !== "tcp" && parts[0] !== "udp")) return undefined;
+        const local = parts[4];
+        const processInfo = parts.slice(6).join(" ");
+        const processMatch = processInfo.match(/users:\(\("([^"]+)",pid=(\d+)/);
+        const listener: PortListener = {
+          protocol: parts[0],
+          address: local.slice(0, -(String(port).length + 1)),
+          port,
+          pid: processMatch ? Number(processMatch[2]) : undefined,
+          process: processMatch?.[1],
+        };
+        return listener;
+      })
+      .filter((listener): listener is PortListener => listener !== undefined);
+    await Promise.all(listeners.map(async listener => {
+      if (listener.pid === undefined) return;
+      const process = await this.execute(`
+pid=${listener.pid}
+path=$(readlink -f /proc/$pid/cwd 2>/dev/null || true)
+command=$(tr "\0" " " < /proc/$pid/cmdline 2>/dev/null || true)
+printf "%s\n%s" "$path" "$command"
+`);
+      const [path, command] = process.stdout.split(/\r?\n/);
+      if (path) {
+        listener.path = path;
+      }
+      if (!listener.process && command) listener.process = command.trim();
+    }));
+    return { occupied: listeners.length > 0, listeners };
+  }
+
+  dispose(): void {
     this.client.dispose();
-    this.connection.isConnected = false;
-    this.connection.revision += 1;
   }
 }
 
 export const ssh = new Ssh();
-
 export default mcpserver.metas("/ssh")
+  .add({
+    protocol: "tool",
+    path: "/hasRemote",
+    description: "检查当前 SSH 连接是否已经建立，不发起连接。",
+    schema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    handler: async () => ({ hasRemote: await ssh.hasRemote() }),
+  })
   .add({
     protocol: "tool",
     path: "/config",
@@ -89,31 +121,8 @@ export default mcpserver.metas("/ssh")
     schema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     handler: input => {
-      const { host, port, username } = ssh.state;
+      const { host, port, username } = store.getState().ssh;
       return { host, port, username };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/state",
-    description: "读取当前 SSH 运行状态摘要，包含主机、端口、用户名与连接版本号。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => {
-      const { host, port, username } = ssh.state;
-      return { host, port, username, revision: ssh.revision };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/connect",
-    description: "建立并验证 SSH 连接，随后返回不含密码的连接状态摘要。",
-    schema: {},
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await ssh.isRemoteRunning();
-      const { host, port, username } = ssh.state;
-      return { host, port, username, revision: ssh.revision };
     },
   })
   .add({
@@ -123,6 +132,14 @@ export default mcpserver.metas("/ssh")
     schema: sshExecuteValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async input => await ssh.execute(input.command),
+  })
+  .add({
+    protocol: "tool",
+    path: "/hasPort",
+    description: "查询远端端口是否被占用，并返回监听进程和项目路径。",
+    schema: portValidator.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => ssh.hasPort(input.port),
   })
   .add({
     protocol: "tool",

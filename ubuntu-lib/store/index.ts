@@ -5,22 +5,29 @@
 // 宝塔密码：9K78s98[98]j.9
 import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import cwdPersist from "zustand-lib/cwdPersist";
 import { createStore } from "zustand/vanilla";
 import type {} from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
-import peerjsStore from "../Peerjs/store.ts";
-import publicStore from "../Public/store.ts";
-import sftpStore from "../Sftp/store.ts";
-import sshStore from "../Ssh/store.ts";
-import stunServerStore from "../StunServer/store.ts";
-import webrtcsignalingStore from "../Webrtcsignaling/store.ts";
+import peerjsStore from "../peerjs/store.ts";
+import publicStore from "../public/store.ts";
+import sftpStore from "../sftp/store.ts";
+import sshStore from "../ssh/store.ts";
+import stunServerStore from "../stunServer/store.ts";
+import localShellStore from "../localShell/store.ts";
+import nginxStore from "../nginx/store.ts";
+import nodejsStore from "../nodejs/store.ts";
+import certificateStore from "../certificate/store.ts";
+import serverRootStore from "../serverRoot/store.ts";
 import pkg from "../package.json";
 import type { Store } from "./type.ts";
 
+const packageRoot = path.dirname(fileURLToPath(new URL("../package.json", import.meta.url)));
+
 const store = createStore<Store>()(
   cwdPersist({
-    cwd: path.join(homedir(), ".extends-ssh"),
+    cwd: path.join(packageRoot, ".extends-ssh"),
     name: pkg.name,
     initializer: immer<Store>((...s) => ({
       ...publicStore(...s),
@@ -28,9 +35,12 @@ const store = createStore<Store>()(
       ...sshStore(...s),
       ...peerjsStore(...s),
       ...stunServerStore(...s),
-      ...webrtcsignalingStore(...s),
+      ...localShellStore(...s),
+      ...nginxStore(...s),
+      ...nodejsStore(...s),
+      ...certificateStore(...s),
+      ...serverRootStore(...s),
     })),
   }),
 );
-
 export default store;

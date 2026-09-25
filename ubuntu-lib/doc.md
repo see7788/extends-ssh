@@ -4,20 +4,19 @@ lib/
 ├── public/
 │   ├── Base.ts<Base<T>>
 │   │   └── abstract readonly current: T;
-│   ├── ServerBase.ts<ServerBase>
+│   ├── ServerBase.ts<ServerBase2>
 │   │   ├── constructor(devPort: number);
-│   │   ├── readonly plugin: Plugin[];
-│   │   ├── readonly define: { peerjs?: Awaited<ReturnType<typeof peerjs.current>>; stunServer?: Awaited<ReturnType<typeof stunServer.current>> };
-│   │   ├── addPm2(input: Pm2Input & { addNginx?: boolean }): this;
-│   │   ├── addSftp(input?: { addNginx?: boolean }): this;
-│   │   ├── addSshForward(input?: { addNginx?: boolean }): this;
+│   │   ├── addPm2(input: Pm2Input): this;
+│   │   ├── addSftp(): this;
+│   │   ├── addSshForward(): this;
 │   │   ├── addPeerjs(): this;
-│   │   └── addStunServer(): this;
+│   │   └── start(): Plugin;
 │   └── store.ts<ImmerStateCreator<{ domain: string }>>
 ├── apt/
 │   └── index.ts<Base<Current>>
 │       ├── type Current = () => Promise<void>;
-│       └── readonly current: Current;
+│       ├── readonly current: Current;
+│       └── hasRemote(): Promise<boolean>;
 ├── certificate/
 │   ├── index.ts<Base<(hostname: string) => Promise<Current>>>
 │   │   ├── type Current = {
@@ -26,11 +25,13 @@ lib/
 │   │   │   └── };
 │   │   ├── readonly current: (hostname: string) => Promise<Current>;
 │   │   └── makeRemote(hostname: string): Promise<Current>;
+│   │   ├── hasRemote(hostname: string): Promise<boolean>;
 │   └── store.ts<ImmerStateCreator<{ certificate: { root: string } }>>
 ├── docker/
 │   └── index.ts<Base<Current>>
 │       ├── type Current = () => Promise<void>;
-│       └── readonly current: Current;
+│       ├── readonly current: Current;
+│       └── hasRemote(): Promise<boolean>;
 ├── localShell/
 │   └── store.ts<ImmerStateCreator<{ localShellActions: { hasPort(port: number): Promise<boolean> } }>>
 ├── nginx/
@@ -49,7 +50,8 @@ lib/
 ├── nodejs/
 │   ├── index.ts<Base<Current>>
 │   │   ├── type Current = () => Promise<void>;
-│   │   └── readonly current: Current;
+│   │   ├── readonly current: Current;
+│   │   ├── hasRemote(): Promise<boolean>;
 │   └── store.ts<ImmerStateCreator<{ nodejs: { root: string; version: string; architecture: string; sha256: string } }>>
 ├── peerjs/
 │   ├── index.ts<Base<() => Promise<Current>>>
@@ -61,6 +63,7 @@ lib/
 │   │   │   ├── readonly key: string;
 │   │   │   └── };
 │   │   └── readonly current: () => Promise<Current>;
+│   │   ├── hasRemote(): Promise<boolean>;
 │   └── store.ts<ImmerStateCreator<{ peerjs: { image: "peerjs/peerjs-server:1.0.2"; key: "peerjs"; listenPort: 9000; pathname: "/peerjs" } }>>
 ├── pm2/
 │   └── index.ts<Base<(input: Pm2Input) => Promise<Current>>>
@@ -120,6 +123,7 @@ lib/
 │   │   ├── readonly current: () => Promise<Current>;
 │   │   ├── execute(command: string): Promise<SSHExecCommandResponse>;
 │   │   ├── hasPort(port: number): Promise<PortState>;
+│   │   ├── hasRemote(): Promise<boolean>;
 │   │   └── dispose(): void;
 │   └── store.ts<ImmerStateCreator<{ ssh: { host: string; port: number; username: string; password: string } }>>
 ├── sshForward/
@@ -143,6 +147,7 @@ lib/
 │   │   │   ├── readonly secure: false;
 │   │   │   └── };
 │   │   └── readonly current: () => Promise<Current>;
+│   │   └── hasRemote(): Promise<boolean>;
 │   └── store.ts<ImmerStateCreator<{ stunServer: { port: number } }>>
 └── store/
     ├── index.ts<Store>

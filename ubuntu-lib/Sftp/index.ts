@@ -1,266 +1,80 @@
-import { isAbsolute, posix } from "node:path";
+﻿import Base from "../public/Base.ts";
+import { isAbsolute } from "node:path";
 import mcpserver from "mcpserver";
-import { ssh } from "../Ssh/index.ts";
-import store from "../store/index.ts";
-import { remoteRootValidator } from "./store.ts";
 import { z } from "zod";
 
-const localPathValidator = z.string().trim().min(1).refine(isAbsolute, {
-  message: "localPath 必须是绝对路径",
-});
-const remotePathValidator = z.string().trim().min(1);
-const remotePathNameValidator = z.string().trim().regex(
-  /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/,
-  { message: "远端目录名称无效" },
-);
+import store from "../store/index.ts";
+import { ssh } from "../ssh/index.ts";
 
-const remotePathResolveValidator = z.object({
-  name: remotePathNameValidator,
+const devPortValidator = z.number().int().min(1).max(65_535);
+const makeRemoteValidator = z.object({
+  port: devPortValidator,
+  localPath: z.string().trim().min(1).refine(isAbsolute, "localPath 必须是绝对路径"),
 }).strict();
-const remoteExecuteValidator = z.object({
-  command: z.string().trim().min(1),
-}).strict();
+const getRemoteValidator = z.object({ port: devPortValidator }).strict();
+type Current = {
+  readonly path: string;
+  hasRemote(): Promise<boolean>;
+};
 
-const remoteUploadValidator = z.object({
-  localPath: localPathValidator,
-  remotePath: remotePathValidator,
-}).strict();
-const remoteDirectoryUploadValidator = z.object({
-  localPath: localPathValidator,
-  remotePath: remotePathValidator,
-}).strict();
-const remoteDirectoryReplaceValidator = z.object({
-  localPath: localPathValidator,
-  remotePath: remotePathValidator,
-}).strict();
-const remoteTextUploadValidator = z.object({
-  text: z.string(),
-  remotePath: remotePathValidator,
-}).strict();
-const remoteTextReadValidator = z.object({
-  remotePath: remotePathValidator,
-}).strict();
-const locDownloadValidator = z.object({
-  remotePath: remotePathValidator,
-  localPath: localPathValidator,
-}).strict();
+class Sftp extends Base<(input: z.infer<typeof makeRemoteValidator>) => Promise<Current>> {
+  readonly current = this.makeRemote.bind(this);
 
-type DirectoryUploadValidate = NonNullable<
-  NonNullable<Parameters<typeof ssh.client.putDirectory>[2]>["validate"]
->;
-
-import type Base from "../Public/Base.ts";
-
-class Sftp implements Base {
-  private remoteRunningPromise?: Promise<void>;
-
-  public isRemoteRunning(): Promise<void> {
-    if (this.remoteRunningPromise) return this.remoteRunningPromise;
-    const remoteRunningPromise = ssh.isRemoteRunning().finally(() => {
-      if (this.remoteRunningPromise === remoteRunningPromise) {
-        this.remoteRunningPromise = undefined;
-      }
+  protected remoteIsRunning(): Promise<void> {
+    return this.ensureRemoteIsRunning(async () => {
+      await ssh.execute("true");
     });
-    this.remoteRunningPromise = remoteRunningPromise;
-    return remoteRunningPromise;
   }
-
-  public get remoteRoot(): string {
-    return remoteRootValidator.parse(store.getState().sftp.remoteRoot);
-  }
-
-  public get state() {
-    return { remoteRoot: this.remoteRoot };
-  }
-
-  /** 根据持久化根目录解析一个应用目录。 */
-  public remotePath(input: z.infer<typeof remotePathResolveValidator>): string {
-    const value = remotePathResolveValidator.parse(input);
-    return posix.join(this.remoteRoot, value.name);
-  }
-
-  /** 应用目录相关的远端命令统一从 SFTP 文件边界执行。 */
-  public remoteExecute(input: z.infer<typeof remoteExecuteValidator>) {
-    const value = remoteExecuteValidator.parse(input);
-    return ssh.execute(value.command);
-  }
-
-  /** 把本地文件上传到远端。 */
-  public async remoteUpload(
-    input: z.infer<typeof remoteUploadValidator>,
-  ): Promise<void> {
-    const value = remoteUploadValidator.parse(input);
-    await this.isRemoteRunning();
-    await ssh.client.putFile(value.localPath, value.remotePath);
-  }
-
-  /** 把本地目录递归上传到远端。 */
-  public async remoteDirectoryUpload<Validate extends DirectoryUploadValidate>(
-    input: z.infer<typeof remoteDirectoryUploadValidator> & { validate: Validate },
-  ): Promise<void> {
-    const { validate, ...uploadInput } = input;
-    const value = remoteDirectoryUploadValidator.parse(uploadInput);
-    await this.isRemoteRunning();
-    const isUploaded = await ssh.client.putDirectory(value.localPath, value.remotePath, {
-      recursive: true,
-      validate,
-    });
-    if (!isUploaded) throw new Error(`远端目录上传失败: ${value.remotePath}`);
-  }
-
-  /** 用本地目录完整替换远端目录，上传失败时保留原目录。 */
-  public async remoteDirectoryReplace(
-    input: z.infer<typeof remoteDirectoryReplaceValidator>,
-  ): Promise<void> {
-    const value = remoteDirectoryReplaceValidator.parse(input);
-    await this.isRemoteRunning();
-    const revision = `${process.pid}-${Date.now()}`;
-    const incomingPath = `${value.remotePath}.incoming-${revision}`;
-    const previousPath = `${value.remotePath}.previous-${revision}`;
-    await ssh.execute(`
-set -e
-rm -rf ${this.shell(incomingPath)} ${this.shell(previousPath)}
-mkdir -p ${this.shell(incomingPath)}
-`);
-    try {
-      await this.remoteDirectoryUpload({
-        localPath: value.localPath,
-        remotePath: incomingPath,
-        validate: () => true,
-      });
-      await ssh.execute(`
-set -e
-PREVIOUS=0
-rollback() {
-  STATUS=$?
-  trap - ERR
-  rm -rf ${this.shell(incomingPath)}
-  if [ "$PREVIOUS" = 1 ] && [ ! -e ${this.shell(value.remotePath)} ]; then
-    mv ${this.shell(previousPath)} ${this.shell(value.remotePath)}
-  fi
-  exit "$STATUS"
-}
-trap rollback ERR
-mkdir -p ${this.shell(posix.dirname(value.remotePath))}
-if [ -e ${this.shell(value.remotePath)} ] || [ -L ${this.shell(value.remotePath)} ]; then
-  mv ${this.shell(value.remotePath)} ${this.shell(previousPath)}
-  PREVIOUS=1
-fi
-mv ${this.shell(incomingPath)} ${this.shell(value.remotePath)}
-rm -rf ${this.shell(previousPath)}
-trap - ERR
-`);
-    } catch (error) {
-      await ssh.execute(`rm -rf ${this.shell(incomingPath)}`).catch(() => undefined);
-      throw error;
+  async getRemote(port: number): Promise<Current> {
+    await this.remoteIsRunning();
+    if (!await this.hasRemote(port)) {
+      throw new Error(`开发端口尚未分配 SFTP 远程目录: ${port}`);
     }
+    return {
+      path: this.remotePath(port),
+      hasRemote: () => this.hasRemote(port),
+    };
+  };
+  async hasRemote(port: number): Promise<boolean> {
+    const remotePath = this.remotePath(port);
+    await this.remoteIsRunning();
+    const markerPath = `${remotePath}/.extends-ssh-port`;
+    const result = await ssh.execute(`test -f ${this.shell(markerPath)} && cat ${this.shell(markerPath)} || true`);
+    return result.stdout.trim() === String(port);
   }
-
-  /** 把文本内容写入远端文件。 */
-  public async remoteTextUpload(
-    input: z.infer<typeof remoteTextUploadValidator>,
-  ): Promise<void> {
-    const value = remoteTextUploadValidator.parse(input);
-    await this.isRemoteRunning();
-    const content = Buffer.from(value.text, "utf8").toString("base64");
-    await ssh.execute(`
-set -e
-mkdir -p ${this.shell(posix.dirname(value.remotePath))}
-printf %s ${this.shell(content)} | base64 -d > ${this.shell(value.remotePath)}
-`);
+  async makeRemote(input: z.infer<typeof makeRemoteValidator>): Promise<Current> {
+    await this.makeRemoteEnsure(input);
+    return {
+      path: this.remotePath(input.port),
+      hasRemote: () => this.hasRemote(input.port),
+    };
   }
-
-  /** 读取远端文本文件；文件不存在时返回 undefined。 */
-  public async remoteTextRead(
-    input: z.infer<typeof remoteTextReadValidator>,
-  ): Promise<string | undefined> {
-    const value = remoteTextReadValidator.parse(input);
-    await this.isRemoteRunning();
-    const response = await ssh.execute(`
-if [ -f ${this.shell(value.remotePath)} ]; then
-  printf exists
-  cat ${this.shell(value.remotePath)}
-fi
-`);
-    return response.stdout.startsWith("exists") ? response.stdout.slice(6) : undefined;
-  }
-
-  /** 把远端文件下载到本地。 */
-  public async locDownload(
-    input: z.infer<typeof locDownloadValidator>,
-  ): Promise<void> {
-    const value = locDownloadValidator.parse(input);
-    await this.isRemoteRunning();
-    await ssh.client.getFile(value.localPath, value.remotePath);
+  private async makeRemoteEnsure(value: z.infer<typeof makeRemoteValidator>): Promise<void> {
+    await this.remoteIsRunning();
+    const remotePath = this.remotePath(value.port);
+    const key = String(value.port);
+    const markerPath = `${remotePath}/.extends-ssh-port`;
+    const marker = await ssh.execute(`if [ -e ${this.shell(remotePath)} ]; then if [ -f ${this.shell(markerPath)} ]; then cat ${this.shell(markerPath)}; else printf __occupied__; fi; fi`);
+    const owner = marker.stdout.trim();
+    if (owner === "__occupied__") throw new Error(`远程目录已被其他资源占用: ${remotePath}`);
+    if (owner && owner !== key) throw new Error(`远程目录已被开发端口 ${owner} 占用: ${remotePath}`);
+    const { putDirectory } = await ssh.current();
+    const uploaded = await putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true });
+    if (!uploaded) throw new Error(`远程目录同步失败: ${remotePath}`);
+    await ssh.execute(`printf %s ${this.shell(key)} > ${this.shell(markerPath)}`);
   }
 
   private shell(value: string): string {
-    return `'${value.replace(/'/g, `'"'"'`)}'`;
+    return `'${value.replace(/'/g, `\'"'"'`)}'`;
+  }
+  public remotePath(port: number): string {
+    return `${store.getState().sftp.remoteRoot}/${port}`;
   }
 }
 
 export const sftp = new Sftp();
 
 export default mcpserver.metas("/sftp")
-  .add({
-    protocol: "tool",
-    path: "/state",
-    description: "读取 SFTP 远程根目录。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => sftp.state,
-  })
-  .add({
-    protocol: "tool",
-    path: "/remotePath",
-    description: "解析 SFTP 持久化的远程应用目录。",
-    schema: remotePathResolveValidator.shape,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => {
-      return { remotePath: sftp.remotePath(input) };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/remoteUpload",
-    description: "通过 SFTP 把本地文件上传到指定的远程路径。",
-    schema: remoteUploadValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      const { localPath, remotePath } = input;
-      await sftp.remoteUpload({ localPath, remotePath });
-      return { uploaded: true };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/remoteTextUpload",
-    description: "通过 SFTP 把文本写入指定的远程文件。",
-    schema: remoteTextUploadValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      const { text, remotePath } = input;
-      await sftp.remoteTextUpload({ text, remotePath });
-      return { uploaded: true };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/remoteTextRead",
-    description: "通过 SFTP 读取指定的远程文本文件。",
-    schema: remoteTextReadValidator.shape,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async input => await sftp.remoteTextRead(input),
-  })
-  .add({
-    protocol: "tool",
-    path: "/locDownload",
-    description: "通过 SFTP 把指定的远程文件下载到本地路径。",
-    schema: locDownloadValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      const { remotePath, localPath } = input;
-      await sftp.locDownload({ remotePath, localPath });
-      return { downloaded: true };
-    },
-  });
+  .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口建立并首次同步远程应用目录。", schema: makeRemoteValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sftp.current(input); return { path: remote.path }; } })
+  .add({ protocol: "tool", path: "/hasRemote", description: "检查开发端口对应的远程应用目录是否已分配。", schema: getRemoteValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await sftp.hasRemote(input.port) }) })
+  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的远程应用目录。", schema: getRemoteValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sftp.getRemote(input.port); return { path: remote.path }; } });

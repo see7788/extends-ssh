@@ -18,8 +18,10 @@ class SshForward extends Base<(port: number) => Promise<Current>> {
   private readonly handles = new Map<number, ForwardHandle>();
   readonly current = this.makeRemote.bind(this);
 
-  protected async remoteIsRunning(): Promise<void> {
-    await ssh.execute("true");
+  protected remoteIsRunning(): Promise<void> {
+    return this.ensureRemoteIsRunning(async () => {
+      await ssh.execute("true");
+    });
   }
   async makeRemote(port: number): Promise<Current> {
     await this.remoteIsRunning();

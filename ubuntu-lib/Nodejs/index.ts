@@ -1,233 +1,69 @@
-import fs, { existsSync } from "node:fs";
-import { createRequire, isBuiltin } from "node:module";
-import path from "node:path";
-import { init, parse } from "es-module-lexer";
-import { apt } from "../Apt/index.ts";
+﻿import Base from "../public/Base.ts";
+import store from "../store/index.ts";
 import mcpserver from "mcpserver";
-import { sftp } from "../Sftp/index.ts";
-import { ssh } from "../Ssh/index.ts";
-import { z } from "zod";
+import { ssh } from "../ssh/index.ts";
 
-const localPathValidator = z.string().trim().min(1).refine(path.isAbsolute, {
-  message: "本地路径必须是绝对路径",
-});
-const remotePathValidator = z.string().trim().min(1);
+type Current = () => Promise<void>;
 
-const deploymentPackageCreateValidator = z.object({
-  buildPath: localPathValidator,
-  projectPath: localPathValidator,
-}).strict();
-const dependenciesRemoteInstallValidator = z.object({
-  projectPath: remotePathValidator,
-}).strict();
+class Nodejs extends Base<Current> {
+  readonly current: Current = async () => {
+    await this.remoteIsRunning();
+  };
 
-
-import type Base from "../Public/Base.ts";
-
-class Nodejs implements Base {
-  private readonly configuration = {
-    version: "22.23.2",
-    architecture: "linux-x64",
-    sha256: "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307",
-  } as const;
-  private remoteRunningPromise?: Promise<void>;
-
-  public isRemoteRunning(): Promise<void> {
-    if (this.remoteRunningPromise) return this.remoteRunningPromise;
-    const remoteRunningPromise = this.remoteRunningEnsure().finally(() => {
-      if (this.remoteRunningPromise === remoteRunningPromise) {
-        this.remoteRunningPromise = undefined;
-      }
-    });
-    this.remoteRunningPromise = remoteRunningPromise;
-    return remoteRunningPromise;
-  }
-
-  /** 根据 Node 构建产物生成远端安装使用的 package.json。 */
-  public async deploymentPackageCreate(
-    input: z.infer<typeof deploymentPackageCreateValidator>,
-  ): Promise<{ content: string; name: string }> {
-    const value = deploymentPackageCreateValidator.parse(input);
-    const packagePath = path.resolve(value.projectPath, "package.json");
-    if (!existsSync(packagePath)) throw new Error(`Node 项目 package.json 不存在: ${packagePath}`);
-    const sourcePackage = JSON.parse(await fs.promises.readFile(packagePath, "utf8")) as {
-      name?: string;
-      type?: string;
-      dependencies?: Record<string, string>;
-    };
-    if (!sourcePackage.name || !/^[A-Za-z0-9._~-]+$/.test(sourcePackage.name)) {
-      throw new TypeError(
-        `Node 项目 package.json name 不是单一路径名称: ${String(sourcePackage.name)}`,
-      );
-    }
-    const dependencies: Record<string, string> = {};
-    const require = createRequire(packagePath);
-    const packageResolve = (name: string): string | undefined => {
-      let searchPath = value.projectPath;
-      while (true) {
-        const candidate = path.join(searchPath, "node_modules", name, "package.json");
-        if (existsSync(candidate)) return candidate;
-        const parentPath = path.dirname(searchPath);
-        if (parentPath === searchPath) break;
-        searchPath = parentPath;
-      }
-      try {
-        let packageDirectory = path.dirname(require.resolve(name));
-        while (path.dirname(packageDirectory) !== packageDirectory) {
-          const candidate = path.join(packageDirectory, "package.json");
-          if (existsSync(candidate)) {
-            const current = JSON.parse(fs.readFileSync(candidate, "utf8")) as { name?: string };
-            if (current.name === name) return candidate;
-          }
-          packageDirectory = path.dirname(packageDirectory);
-        }
-      } catch {
-        return;
-      }
-    };
-    const externalPackages = new Set<string>();
-    await init;
-    const files = await fs.promises.readdir(value.buildPath, { recursive: true });
-    for (const file of files.filter(value => /\.[cm]?js$/.test(value))) {
-      const source = await fs.promises.readFile(path.resolve(value.buildPath, file), "utf8");
-      for (const importEntry of parse(source)[0]) {
-        const specifier = importEntry.n;
-        if (
-          !specifier
-          || specifier.startsWith(".")
-          || specifier.startsWith("/")
-          || specifier.startsWith("#")
-          || isBuiltin(specifier)
-        ) continue;
-        externalPackages.add(specifier.startsWith("@")
-          ? specifier.split("/").slice(0, 2).join("/")
-          : specifier.split("/")[0]);
-      }
-    }
-    const packageNames = Array.from(externalPackages);
-    for (let packageIndex = 0; packageIndex < packageNames.length; packageIndex += 1) {
-      const name = packageNames[packageIndex];
-      const configuredVersion = sourcePackage.dependencies?.[name];
-      if (configuredVersion?.startsWith("workspace:")) {
-        throw new Error(`Node 构建产物仍依赖 workspace 包 ${name}`);
-      }
-      const dependencyPath = packageResolve(name);
-      if (!dependencyPath) throw new Error(`无法定位 Node 外部依赖: ${name}`);
-      const dependency = JSON.parse(await fs.promises.readFile(dependencyPath, "utf8")) as {
-        version?: string;
-        peerDependencies?: Record<string, string>;
-      };
-      if (!dependency.version) throw new Error(`无法确定 Node 外部依赖版本: ${name}`);
-      dependencies[name] = configuredVersion ?? dependency.version;
-      for (const peerName of Object.keys(dependency.peerDependencies ?? {})) {
-        if (packageResolve(peerName) && !externalPackages.has(peerName)) {
-          externalPackages.add(peerName);
-          packageNames.push(peerName);
-        }
-      }
-    }
-    return {
-      content: `${JSON.stringify({
-        name: sourcePackage.name,
-        private: true,
-        type: sourcePackage.type ?? "module",
-        dependencies,
-      }, null, 2)}\n`,
-      name: sourcePackage.name,
-    };
-  }
-
-  /** 在远端 Node 项目中安装生产依赖。 */
-  public async dependenciesRemoteInstall(
-    input: z.infer<typeof dependenciesRemoteInstallValidator>,
-  ): Promise<void> {
-    const value = dependenciesRemoteInstallValidator.parse(input);
-    await this.isRemoteRunning();
-    await ssh.execute(`
-set -e
-cd ${this.shell(value.projectPath)}
-npm install --omit=dev --no-package-lock
-`);
-  }
-
-  private async remoteRunningEnsure(): Promise<void> {
-    const { version, architecture, sha256 } = this.configuration;
-    if (!/^\d+\.\d+\.\d+$/.test(version)) {
-      throw new TypeError(`Node.js 版本无效: ${version}`);
-    }
-    if (architecture !== "linux-x64") {
-      throw new TypeError(`Node.js 架构无效: ${architecture}`);
-    }
-    if (!/^[a-f0-9]{64}$/.test(sha256)) {
-      throw new TypeError(`Node.js SHA-256 无效: ${sha256}`);
-    }
-    await apt.isRemoteRunning();
-    const archive = `node-v${version}-${architecture}.tar.xz`;
-    const nodeRoot = `/opt/node-v${version}-${architecture}`;
-    await ssh.execute(`
-set -e
-NODE_VERSION=${version}
-NODE_ARCHIVE=${archive}
-NODE_ROOT=${nodeRoot}
-if [ ! -x "$NODE_ROOT/bin/node" ]; then
-  cd /tmp
-  rm -f "$NODE_ARCHIVE"
-  curl -fL --connect-timeout 15 --max-time 180 --retry 2 -o "$NODE_ARCHIVE" \
-    "https://npmmirror.com/mirrors/node/v$NODE_VERSION/$NODE_ARCHIVE" || \
-  curl -fL --connect-timeout 15 --max-time 180 --retry 2 -o "$NODE_ARCHIVE" \
-    "https://nodejs.org/download/release/v$NODE_VERSION/$NODE_ARCHIVE"
-  printf '%s  %s\n' ${sha256} "$NODE_ARCHIVE" | sha256sum -c -
-  rm -rf "$NODE_ROOT"
-  tar -xJf "$NODE_ARCHIVE" -C /opt
-  rm -f "$NODE_ARCHIVE"
+  protected remoteIsRunning(): Promise<void> {
+    return this.ensureRemoteIsRunning(async () => {
+      const { version, architecture, sha256 } = store.getState().nodejs;
+      const archive = `node-v${version}-${architecture}.tar.xz`;
+      const root = store.getState().nodejs.root;
+      const shell = (value: string) => `'${value.replace(/'/g, `\'"'"'`)}'`;
+      await ssh.execute(`set -e
+if ! command -v curl >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then
+  apt-get update -qq
+  apt-get install -y -qq --no-install-recommends curl ca-certificates tar xz-utils >/dev/null
 fi
-for COMMAND in node npm npx corepack; do
-  test -x "$NODE_ROOT/bin/$COMMAND"
-  ln -sfn "$NODE_ROOT/bin/$COMMAND" "/usr/local/bin/$COMMAND"
-done
-/usr/local/bin/node -e "if (process.versions.node !== '$NODE_VERSION') process.exit(1)"
-/usr/local/bin/npm --version >/dev/null
-`);
+if [ ! -x ${shell(`${root}/bin/node`)} ]; then
+  cd /tmp
+  rm -f ${shell(archive)}
+  curl -fL --connect-timeout 15 --max-time 180 --retry 2 -o ${shell(archive)} "https://nodejs.org/download/release/v${version}/${archive}"
+  printf '%s  %s\\n' ${sha256} ${shell(archive)} | sha256sum -c -
+  rm -rf ${shell(root)}
+  mkdir -p ${shell(root)}
+  tar -xJf ${shell(archive)} --strip-components=1 -C ${shell(root)}
+  rm -f ${shell(archive)}
+fi
+for command in node npm npx corepack; do ln -sfn ${shell(`${root}/bin`)}"/$command" "/usr/local/bin/$command"; done
+node --version`);
+    });
   }
 
-  private shell(value: string): string {
-    return `'${value.replace(/'/g, `'"'"'`)}'`;
+  async hasRemote(): Promise<boolean> {
+    const { root } = store.getState().nodejs;
+    const shell = (value: string) => `'${value.replace(/'/g, `\'"'"'`)}'`;
+    const result = await ssh.execute(`if [ -x ${shell(`${root}/bin/node`)} ] \
+  && [ -x ${shell(`${root}/bin/npm`)} ] \
+  && [ -x ${shell(`${root}/bin/npx`)} ]; then printf true; else printf false; fi`);
+    return result.stdout.trim() === "true";
   }
 }
 
 export const nodejs = new Nodejs();
 
-export default mcpserver.metas("/nodejs")
+export default mcpserver.metas("/nodejs").add({
+  protocol: "tool",
+  path: "/ensure",
+  description: "确保远端 Node.js 运行环境可用。",
+  schema: {},
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  handler: async () => {
+    await nodejs.current();
+    return { ready: true };
+  },
+})
   .add({
     protocol: "tool",
-    path: "/ensure",
-    description: "检查远端 Node.js，缺少时完成安装并验证可用性。",
+    path: "/hasRemote",
+    description: "检查远端 Node.js 运行环境是否已经存在，不执行安装。",
     schema: {},
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await nodejs.isRemoteRunning();
-      return { ready: true };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/deploymentPackageCreate",
-    description: "根据本地构建产物生成远端安装使用的生产 package.json。",
-    schema: deploymentPackageCreateValidator.shape,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async input => {
-      const { buildPath, projectPath } = input;
-      return await nodejs.deploymentPackageCreate(input);
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/dependenciesRemoteInstall",
-    description: "在指定的远端 Node.js 项目目录安装生产依赖。",
-    schema: dependenciesRemoteInstallValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await nodejs.dependenciesRemoteInstall(input);
-      return { installed: true };
-    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async () => ({ hasRemote: await nodejs.hasRemote() }),
   });
