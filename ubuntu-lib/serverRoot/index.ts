@@ -1,12 +1,11 @@
 ﻿import Base from "./Base.ts";
-import store from "../store/index.ts";
+
 export function webRtcSignaling() {
-    return new Base(9002).addPm2({ command: "pnpm dev" }).addSftp().start({
-        define: {
-            host: `webrtc.${store.getState().domain}`,
-            port: 443,
-            path: "/signal",
-            secure: true,
-        }
-    })
+  const port = 9002;
+  const path = "/signal";
+  const base = new Base(port).addPm2({ command: "pnpm dev" }).addSftp();
+  return base.start({
+    server: { path },
+    client: { path },
+  });
 }

@@ -25,8 +25,8 @@ type Current = {
   close(): Promise<void>;
 };
 
-class Pm2 extends Base<(input: z.infer<typeof processValidator>) => Promise<Current>> {
-  readonly current = this.makeRemote.bind(this);
+class Pm2 extends Base<(port: number) => Promise<Current>> {
+  readonly current = this.getRemote.bind(this);
 
   protected remoteIsRunning(): Promise<void> {
     return this.ensureRemoteIsRunning(async () => {
@@ -34,7 +34,7 @@ class Pm2 extends Base<(input: z.infer<typeof processValidator>) => Promise<Curr
       await ssh.execute("set -e; if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi; pm2 ping >/dev/null; pm2 save --force >/dev/null");
     });
   }
-  async getRemote(port: number): Promise<Current> {
+  private async getRemote(port: number): Promise<Current> {
     await this.remoteIsRunning();
     if (!await this.hasRemote(port)) {
       throw new Error(`开发端口尚未分配 PM2 进程: ${port}`);
@@ -107,9 +107,9 @@ pm2 save --force >/dev/null`);
 
 export const pm2 = new Pm2();
 const server = mcpserver.metas("/pm2");
-server.add({ protocol: "tool", path: "/makeRemote", description: "按开发端口、工作目录和命令创建远端 PM2 进程。", schema: processValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await pm2.current(input); return { name: remote.name }; } });
+server.add({ protocol: "tool", path: "/makeRemote", description: "按开发端口、工作目录和命令创建远端 PM2 进程。", schema: processValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await pm2.makeRemote(input); return { name: remote.name }; } });
 server.add({ protocol: "tool", path: "/hasRemote", description: "检查端口对应的 PM2 进程是否已存在。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await pm2.hasRemote(input.port) }) });
-server.add({ protocol: "tool", path: "/getRemote", description: "检查并读取端口对应的 PM2 进程标识。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await pm2.getRemote(input.port); return { name: remote.name }; } });
+server.add({ protocol: "tool", path: "/getRemote", description: "检查并读取端口对应的 PM2 进程标识。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await pm2.current(input.port); return { name: remote.name }; } });
 server.add({ protocol: "tool", path: "/refresh", description: "刷新端口对应的 PM2 进程状态。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: input => pm2.refresh(input.port) });
 server.add({ protocol: "tool", path: "/stop", description: "停止端口对应的 PM2 进程。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await pm2.stop(input.port); return { stopped: true }; } });
 server.add({ protocol: "tool", path: "/restart", description: "重启端口对应的 PM2 进程。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await pm2.restart(input.port); return { restarted: true }; } });

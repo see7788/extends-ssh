@@ -22,34 +22,47 @@ const makeInputValidator = z.object({
 
 type Current = {
   readonly subdomain: string;
+  readonly host: string;
+  readonly port: 443;
+  readonly secure: true;
   hasRemote(): Promise<boolean>;
   close(): Promise<void>;
 };
-class Nginx extends Base<(input: number | string) => Promise<Current>> {
-  readonly current = this.makeRemote.bind(this);
+class Nginx extends Base<(port: number) => Promise<Current>> {
+  readonly current = this.getRemote.bind(this);
 
   protected remoteIsRunning(): Promise<void> {
     return this.ensureRemoteIsRunning(async () => {
-      await ssh.execute("set -e; export DEBIAN_FRONTEND=noninteractive; if ! command -v nginx >/dev/null 2>&1; then apt-get update -qq; apt-get install -y -qq --no-install-recommends nginx >/dev/null; fi; systemctl enable nginx --now >/dev/null; ufw allow 80/tcp >/dev/null 2>&1 || true; ufw allow 443/tcp >/dev/null 2>&1 || true; nginx -t");
+      await ssh.execute(`set -e
+NGINX=/www/server/nginx/sbin/nginx
+CONFIG=/www/server/nginx/conf/nginx.conf
+test -x "$NGINX"
+pgrep -f 'nginx: master process' >/dev/null
+"$NGINX" -t -c "$CONFIG" >/dev/null
+ufw allow 80/tcp >/dev/null 2>&1 || true
+ufw allow 443/tcp >/dev/null 2>&1 || true`);
     });
   }
-  async getRemote(port: number): Promise<Current> {
+  private async getRemote(port: number): Promise<Current> {
     await this.remoteIsRunning();
     if (!await this.hasRemote(port)) {
-      throw new Error(`开发端口尚未分配 Nginx 远程路由: ${port}`);
+      return this.makeRemote(port);
     }
     return {
       subdomain: this.remoteDescription(port),
+      host: this.remoteDescription(port),
+      port: 443,
+      secure: true,
       hasRemote: () => this.hasRemote(port),
       close: () => this.closeRemote(port),
     };
   };
   async hasRemote(port: number): Promise<boolean> {
     const subdomain = this.remoteDescription(port);
-    const { enabled } = this.sitePaths(port);
-    const result = await ssh.execute(`if [ -f ${this.shell(enabled)} ] \
-  && grep -Fq -- ${this.shell(`server_name ${subdomain};`)} ${this.shell(enabled)} \
-  && grep -Fq -- ${this.shell("listen 443 ssl;")} ${this.shell(enabled)}; then printf true; else printf false; fi`);
+    const route = this.routePath(port);
+    const result = await ssh.execute(`if [ -f ${this.shell(route)} ] \
+  && grep -Fq -- ${this.shell(`server_name ${subdomain};`)} ${this.shell(route)} \
+  && grep -Fq -- ${this.shell("listen 443 ssl;")} ${this.shell(route)}; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
   async makeRemote(input: number | string): Promise<Current> {
@@ -59,6 +72,9 @@ class Nginx extends Base<(input: number | string) => Promise<Current>> {
       await this.writeRemote(port, `  location / { proxy_pass http://127.0.0.1:${port}; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }`);
       return {
         subdomain: this.remoteDescription(port),
+        host: this.remoteDescription(port),
+        port: 443,
+        secure: true,
         hasRemote: () => this.hasRemote(port),
         close: () => this.closeRemote(port),
       };
@@ -69,16 +85,20 @@ class Nginx extends Base<(input: number | string) => Promise<Current>> {
     await this.writeRemote(port, `  location / { root ${path}; index index.html; try_files $uri $uri/ =404; }`);
     return {
       subdomain: this.remoteDescription(port),
+      host: this.remoteDescription(port),
+      port: 443,
+      secure: true,
       hasRemote: () => this.hasRemote(port),
       close: () => this.closeRemote(port),
     };
   }
   private async writeRemote(value: number, location: string): Promise<void> {
     const subdomain = this.remoteDescription(value);
-    const { available, enabled } = this.sitePaths(value);
+    const route = this.routePath(value);
     const certificatePaths = await certificate.current(subdomain);
     await ssh.execute(`set -e
-cat > ${this.shell(available)} <<'NGINX'
+mkdir -p ${this.shell("/www/server/panel/vhost/nginx")}
+cat > ${this.shell(route)} <<'NGINX'
 server {
   listen 80;
   server_name ${subdomain};
@@ -93,21 +113,18 @@ server {
 ${location}
 }
 NGINX
-ln -sfn ${this.shell(available)} ${this.shell(enabled)}
-nginx -t
-systemctl reload nginx`);
+/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
+/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf`);
   }
   async closeRemote(port: number): Promise<void> {
     await this.remoteIsRunning();
-    const { available, enabled } = this.sitePaths(port);
-    await ssh.execute(`rm -f ${this.shell(enabled)} ${this.shell(available)}; nginx -t && systemctl reload nginx`);
+    await ssh.execute(`set -e
+rm -f ${this.shell(this.routePath(port))}
+/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
+/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf`);
   }
-  private sitePaths(port: number): { available: string; enabled: string } {
-    const { sitesAvailableRoot, sitesEnabledRoot } = store.getState().nginx;
-    return {
-      available: `${sitesAvailableRoot}/${port}`,
-      enabled: `${sitesEnabledRoot}/${port}`,
-    };
+  private routePath(port: number): string {
+    return `/www/server/panel/vhost/nginx/extends-ssh-${port}.conf`;
   }
   private shell(value: string): string { return `'${value.replace(/'/g, `\'"'"'`)}'`; }
   private remoteDescription(port: number): string {
@@ -117,7 +134,7 @@ systemctl reload nginx`);
 
 export const nginx = new Nginx();
 export default mcpserver.metas("/nginx")
-  .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口或远程目录写入 HTTPS Nginx 路由；域名 DNS 需指向 SSH 主机。", schema: makeInputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const value = makeInputValidator.parse(input); const remote = await nginx.current(value.port ?? value.path!); return { subdomain: remote.subdomain }; } })
+  .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口或远程目录写入 HTTPS Nginx 路由；域名 DNS 需指向 SSH 主机。", schema: makeInputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const value = makeInputValidator.parse(input); const remote = await nginx.makeRemote(value.port ?? value.path!); return { subdomain: remote.subdomain }; } })
   .add({ protocol: "tool", path: "/hasRemote", description: "检查开发端口对应的 HTTPS Nginx 路由是否已写入。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await nginx.hasRemote(input.port) }) })
-  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的 HTTPS Nginx 路由配置。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await nginx.getRemote(input.port); return { subdomain: remote.subdomain }; } })
+  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的 HTTPS Nginx 路由配置。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await nginx.current(input.port); return { subdomain: remote.subdomain }; } })
   .add({ protocol: "tool", path: "/closeRemote", description: "关闭开发端口对应的 HTTPS Nginx 路由。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await nginx.closeRemote(input.port); return { closed: true }; } });
