@@ -6,10 +6,10 @@ lib/
 │   │   └── abstract readonly current: T;
 │   ├── ServerBase.ts<ServerBase2>
 │   │   ├── constructor(devPort: number);
-│   │   ├── addPm2(input: Pm2Input): this;
-│   │   ├── addSftp(): this;
-│   │   ├── addSshForward(): this;
-│   │   ├── addPeerjs(): this;
+│   │   ├── pm2Add(input: Pm2Input): this;
+│   │   ├── sftpAdd(): this;
+│   │   ├── sshForwardAdd(): this;
+│   │   ├── peerjsAdd(): this;
 │   │   └── start(): Plugin;
 │   └── store.ts<ImmerStateCreator<{ domain: string }>>
 ├── apt/

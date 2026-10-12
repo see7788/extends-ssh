@@ -1,6 +1,6 @@
 ﻿import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 type ServerRootState = {
-  serverRoot: Record<number, string>;
+  serverRoot: Record<number, { packagePath: string, producerDefine: Record<string, any> }>;
 };
 
 const serverRootStore: ImmerStateCreator<ServerRootState> = () => ({ serverRoot: {} });

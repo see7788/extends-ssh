@@ -7,7 +7,7 @@ import type stunServerStore from "../stunServer/store.ts";
 import type localShellStore from "../localShell/store.ts";
 import type nginxStore from "../nginx/store.ts";
 import type nodejsStore from "../nodejs/store.ts";
-import type serverRoot from "../serverRoot/store.ts"
+import type serverRoot from "../index/store.ts"
 export type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof certificateStore>
   & ReturnType<typeof peerjsStore>

@@ -1,21 +1,22 @@
 {
   "name": "ubuntu-lib",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "exports": {
-    "./serverRoot/index.ts": "./serverRoot/index.ts"
+    ".": "./index/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "es-module-lexer": "2.3.1",
-    "zustand-lib": "workspace:*",
     "immer": "10.2.0",
     "mcpserver": "workspace:*",
     "node-ssh": "^13.2.1",
+    "peerjs": "^1.5.5",
+    "zod": "^4.4.3",
     "zustand": "5.0.13",
-    "zod": "^4.4.3"
+    "zustand-lib": "workspace:*"
   },
   "peerDependencies": {
     "vite": "^6.3.6 || ^7.0.0 || ^8.0.0"
