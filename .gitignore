@@ -10,4 +10,5 @@ node_modules/
 **/.bak2/
 **/*.bak
 **/*.bak2
+**/*.bak.ts
 .dist/**

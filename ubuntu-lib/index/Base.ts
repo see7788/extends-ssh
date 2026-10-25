@@ -1,5 +1,5 @@
 ﻿import { statSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Plugin } from "vite";
 import store from "../store/index.ts";
@@ -10,158 +10,197 @@ import { sftp } from "../sftp/index.ts";
 import { sshForward } from "../sshForward/index.ts";
 import { stunServer } from "../stunServer/index.ts";
 import type { PeerOptions } from "peerjs";
-type defineState = {
-  devPort: number;
-  peerjs?: Required<Pick<PeerOptions, "host" | "port" | "path" | "secure" | "key">> & {
-    readonly config: {
-      readonly iceServers: Array<{ readonly urls: string }>;
+
+type state_t = {
+  peerjs: {
+    state: Required<Pick<PeerOptions, "host" | "port" | "path" | "secure" | "key">> & {
+      readonly config: {
+        readonly iceServers: Array<{ readonly urls: string }>;
+      };
+    };
+    actions: {
+      peerjs: () => Promise<() => Promise<void>>;
     };
   };
-  nginx?: Pick<Awaited<ReturnType<typeof nginx.current>>, "host">;
-}
-type replaceBase_t<instance, next extends Base<any>> =Omit<instance, keyof Base<any>> & next;
-
-export class Base<D extends Pick<defineState, "devPort">> {
-
-}
-/**链式注册，必须确保链式消费者可以不按顺序调用，类内部要完成调用顺序的逻辑化 */
-export default class <D extends defineState> extends Base<D> {
-
-  constructor(op: D) {
-    super()
-    this.defineState = op
-  }
-  protected readonly actions: { [k in "peerjs" | "sftp" | "pm2" | "sshForward"]?: () => Promise<() => Promise<void>> } = {};
-  protected defineState: D
-  peerjsAdd() {
-    const state = store.getState();
-    this.defineState.peerjs = {
-      host: state.ssh.host,
-      port: state.peerjs.listenPort,
-      path: state.peerjs.pathname,
-      secure: false,
-      key: state.peerjs.key,
-      config: {
-        iceServers: [{ urls: `stun:${state.ssh.host}:${state.stunServer.port}` }],
-      },
+  sshForward: {
+    state: { readonly host: string };
+    actions: {
+      sshForward: () => Promise<() => Promise<void>>;
     };
-    this.actions.peerjs = async () => {
-      await peerjs.current();
-      await stunServer.current();
-      return async () => { }
+  };
+  sftp: {
+    state: { readonly host: string };
+    actions: {
+      sftp: () => Promise<() => Promise<void>>;
     };
-    return this as Base<D & { peerjs: NonNullable<defineState["peerjs"]> }>;
-  }
+  };
+  pm2: {
+    state: { readonly host: string };
+    actions: {
+      pm2: () => Promise<() => Promise<void>>;
+    };
+  };
+};
+
+export default class <T extends Partial<state_t> & { devPort: number }> {
+  constructor(public state: T) { }
+
   private get locPath() {
-    const c = store.getState().serverRoot[this.defineState.devPort]
+    const c = store.getState().serverRoot[this.state.devPort]
     if (!c) {
-      throw Error("!store.getState().serverRoot[this.devPort]")
+      throw Error("!store.getState().serverRoot[this.state.devPort]")
     }
     if (!statSync(c.packagePath, { throwIfNoEntry: false })) {
       throw Error("!statSync(c.packagePath, { throwIfNoEntry: false })")
     }
     return c.packagePath
   }
-  sshForwardAdd() {
-    this.defineState.nginx ??= {
-      host: `${this.defineState.devPort}.${store.getState().domain}`
-    };
-    this.actions.sshForward = async () => {
-      const forward = await sshForward.current(this.defineState.devPort);
-      return async () => {
-        forward.close();
-      };
-    };
-    return this as Base<D & { nginx: NonNullable<defineState["nginx"]> }>;
+
+  serviceDefine(): {
+    [K in Exclude<keyof this["state"], "devPort"> as NonNullable<this["state"][K]> extends { state: unknown } ? K : never]:
+    NonNullable<this["state"][K]> extends { state: infer State } ? State : never;
+  } {
+    return Object.fromEntries(
+      Object.entries(this.state)
+        .filter(([name]) => name !== "devPort")
+        .map(([name, service]) => [
+          name,
+          typeof service === "object" && service !== null && "state" in service ? service.state : undefined,
+        ])
+        .filter(([, service]) => service !== undefined),
+    ) as any;
   }
-  sftpAdd() {
-    this.defineState.nginx ??= {
-      host: `${this.defineState.devPort}.${store.getState().domain}`
-    };
-    this.actions.sftp = async () => {
-      await sftp.makeRemote({ port: this.defineState.devPort, localPath: this.locPath })
-      return async () => { }
-    };
-    return this as Base<D & { nginx: NonNullable<defineState["nginx"]> }>;
-  }
-  pm2Add(input: Omit<Parameters<typeof pm2.makeRemote>[0], "port" | "cwd">) {
-    this.defineState.nginx ??= {
-      host: `${this.defineState.devPort}.${store.getState().domain}`
-    };
-    this.actions.pm2 = async () => {
-      const c = await pm2.makeRemote({ ...input, cwd: sftp.remotePath(this.defineState.devPort), port: this.defineState.devPort });
-      return async () => c.close()
-    };
-    return this as Base<D & { nginx: NonNullable<defineState["nginx"]> }>;
-  }
-  producer<T extends Omit<Record<string, any>, "devPort">>(producerDefine: T) {
-    const define: D & T = { ...this.defineState, ...producerDefine }
-    return {
-      producerPlugin: () => {
-        return {
-          name: `producerPlugin${this.defineState.devPort}`,
-          enforce: "post",
-          config: async () => {
-            return {
-              server: { port: this.defineState.devPort, strictPort: true },
-              define
-            };
-          },
-          configResolved: async ({ root }) => {
-            store.setState(s => {
-              s.serverRoot[this.defineState.devPort] = {
-                packagePath: root,
-                producerDefine,
-              };
-            });
-            await writeFile(
-              path.join(root, `declare.d.ts`),
-              `declare const declare: ${JSON.stringify(
-                define,
-                null,
-                2,
-              )};\n`,
-              "utf8",
-            );
-          },
-          configureServer: () => this.actions.sshForward?.(),
-          closeBundle: async () => {
-            await this.actions.sftp?.();
-            await this.actions.pm2?.();
-          },
-        } satisfies Plugin
+  peerjsAdd<Self extends this>(this: Self): Self & {
+    state: Self["state"] & Pick<state_t, "peerjs">;
+  } {
+    const state = store.getState();
+    this.state.peerjs = {
+      state: {
+        host: state.ssh.host,
+        port: state.peerjs.listenPort,
+        path: state.peerjs.pathname,
+        secure: false,
+        key: state.peerjs.key,
+        config: {
+          iceServers: [{ urls: `stun:${state.ssh.host}:${state.stunServer.port}` }],
+        },
       },
-      consumerPlugin: (consumerDefine: (define: D & { [K in `declare${D["devPort"]}`]: T }) => Record<string, any>) => {
-        const define = consumerDefine({
-          ...this.defineState,
-          [`declare${this.defineState.devPort}`]: producerDefine,
-        } as D & { [K in `declare${D["devPort"]}`]: T })
+      actions: {
+        peerjs: async () => {
+          await peerjs.remoteIsRunning();
+          await stunServer.remoteIsRunning();
+          return async () => { }
+        },
+      },
+    };
+    return this as any;
+  }
+
+
+  sshForwardAdd<Self extends this>(this: Self): Self & {
+    state: Self["state"] & Pick<state_t, "sshForward">;
+  } {
+    const state = store.getState();
+    this.state.sshForward = {
+      state: {
+        host: `${this.state.devPort}.${state.domain}`,
+      },
+      actions: {
+        sshForward: async () => {
+          const current = await sshForward.remoteIsRunning();
+          if (!current) throw new Error("SSH 转发服务未返回生命周期方法");
+          const forward = await current(this.state.devPort);
+          return async () => {
+            forward.close();
+          };
+        },
+      },
+    };
+    return this as any;
+  }
+
+  sftpAdd<Self extends this>(this: Self): Self & {
+    state: Self["state"] & Pick<state_t, "sftp">;
+  } {
+    const state = store.getState();
+    this.state.sftp = {
+      state: {
+        host: `${this.state.devPort}.${state.domain}`,
+      },
+      actions: {
+        sftp: async () => {
+          await sftp.makeRemote({ port: this.state.devPort, localPath: this.locPath })
+          return async () => { }
+        },
+      },
+    };
+    return this as any;
+  }
+
+  pm2Add<Self extends this>(
+    this: Self,
+    input: Omit<Parameters<typeof pm2.makeRemote>[0], "port" | "cwd">,
+  ): Self & {
+    state: Self["state"] & Pick<state_t, "pm2">;
+  } {
+    const state = store.getState();
+    this.state.pm2 = {
+      state: {
+        host: `${this.state.devPort}.${state.domain}`,
+      },
+      actions: {
+        pm2: async () => {
+          const c = await pm2.makeRemote({
+            ...input,
+            cwd: sftp.remotePath(this.state.devPort),
+            port: this.state.devPort,
+          });
+          return async () => c.close()
+        },
+      },
+    };
+    return this as any;
+  }
+
+  producerPlugin<Self extends this, T extends Record<string, any> & { devPort?: never }>(
+    this: Self,
+    producerDefine: T,
+  ): Plugin {
+    const define = { ...this.serviceDefine(), ...producerDefine };
+    return {
+      name: `producerPlugin${this.state.devPort}`,
+      enforce: "post",
+      config: async () => {
         return {
-          name: `consumerPlugin declare${this.defineState.devPort}`,
-          config: async () => {
-            return {
-              define
-            };
-          },
-          configResolved: async ({ root }) => {
-            if (this.actions.sftp && !await sftp.hasRemote(this.defineState.devPort)) {
-              await this.actions.sftp();
-            }
-            if (this.actions.pm2 && !await pm2.hasRemote(this.defineState.devPort)) {
-              await this.actions.pm2();
-            }
-            await writeFile(
-              path.join(root, `declare${this.defineState.devPort}.d.ts`),
-              `declare const declare${this.defineState.devPort}: ${JSON.stringify(
-                define,
-                null,
-                2,
-              )};\n`,
-              "utf8",
-            );
-          }
-        } satisfies Plugin
-      }
+          server: { port: this.state.devPort, strictPort: true },
+        };
+      },
+      configResolved: async ({ root }) => {
+        store.setState(s => {
+          s.serverRoot[this.state.devPort] = {
+            packagePath: root,
+            producerDefine,
+            define,
+          };
+        });
+        const declareDirectory = path.join(root, "src", "declare");
+        await mkdir(declareDirectory, { recursive: true });
+        const declaration = `export default ${JSON.stringify(
+          define,
+          null,
+          2,
+        )} as const;\n`;
+        await writeFile(
+          path.join(declareDirectory, `default.ts`),
+          `\uFEFF${declaration.replace(/\r?\n/g, "\r\n")}`,
+          "utf8",
+        );
+      },
+      configureServer: () => this.state.sshForward?.actions.sshForward?.(),
+      closeBundle: async () => {
+        await this.state.sftp?.actions.sftp?.();
+        await this.state.pm2?.actions.pm2?.();
+      },
     }
   }
 

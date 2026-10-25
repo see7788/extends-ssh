@@ -1,4 +1,4 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
 import mcpserver from "mcpserver";
 import { z } from "zod";
@@ -23,28 +23,35 @@ type PortState = {
 };
 type Current = Pick<NodeSSH, "putDirectory" | "forwardIn">;
 
-class Ssh extends Base<() => Promise<Current>> {
+class Ssh extends Base<Current> {
   private readonly client = new NodeSSH();
   private connectPromise?: Promise<void>;
-  readonly current = async (): Promise<Current> => {
-    await this.remoteIsRunning();
-    return {
-      putDirectory: this.client.putDirectory.bind(this.client),
-      forwardIn: this.client.forwardIn.bind(this.client),
-    };
-  };
-  protected async remoteIsRunning(): Promise<void> {
-    if (this.client.isConnected()) return;
+  protected async task(): Promise<Current> {
+    if (this.client.isConnected()) {
+      return {
+        putDirectory: this.client.putDirectory.bind(this.client),
+        forwardIn: this.client.forwardIn.bind(this.client),
+      };
+    }
     if (!this.connectPromise) {
       this.connectPromise = this.client.connect(store.getState().ssh).then(() => undefined).finally(() => {
         this.connectPromise = undefined;
       });
     }
     await this.connectPromise;
+    return {
+      putDirectory: this.client.putDirectory.bind(this.client),
+      forwardIn: this.client.forwardIn.bind(this.client),
+    };
   }
 
   async hasRemote(): Promise<boolean> {
     return this.client.isConnected();
+  }
+
+  async config(): Promise<Readonly<{ host: string; port: number; username: string }>> {
+    const { host, port, username } = store.getState().ssh;
+    return { host, port, username };
   }
 
   async execute(command: z.infer<typeof sshExecuteValidator>["command"]): Promise<SSHExecCommandResponse> {
@@ -120,10 +127,7 @@ export default mcpserver.metas("/ssh")
     description: "读取 SSH 配置，仅返回主机、端口与用户名，绝不返回密码。",
     schema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => {
-      const { host, port, username } = store.getState().ssh;
-      return { host, port, username };
-    },
+    handler: input => ssh.config(),
   })
   .add({
     protocol: "tool",

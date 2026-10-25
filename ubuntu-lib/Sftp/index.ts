@@ -1,4 +1,4 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import { isAbsolute } from "node:path";
 import mcpserver from "mcpserver";
 import { z } from "zod";
@@ -18,15 +18,11 @@ type Current = {
 };
 
 class Sftp extends Base<(port: number) => Promise<Current>> {
-  readonly current = this.getRemote.bind(this);
-
-  protected remoteIsRunning(): Promise<void> {
-    return this.ensureRemoteIsRunning(async () => {
-      await ssh.execute("true");
-    });
+  protected async task(): Promise<(port: number) => Promise<Current>> {
+    await ssh.execute("true");
+    return this.getRemote.bind(this);
   }
   private async getRemote(port: number): Promise<Current> {
-    await this.remoteIsRunning();
     if (!await this.hasRemote(port)) {
       throw new Error(`开发端口尚未分配 SFTP 远程目录: ${port}`);
     }
@@ -58,7 +54,9 @@ class Sftp extends Base<(port: number) => Promise<Current>> {
     const owner = marker.stdout.trim();
     if (owner === "__occupied__") throw new Error(`远程目录已被其他资源占用: ${remotePath}`);
     if (owner && owner !== key) throw new Error(`远程目录已被开发端口 ${owner} 占用: ${remotePath}`);
-    const { putDirectory } = await ssh.current();
+    const sshCurrent = await ssh.remoteIsRunning();
+    if (!sshCurrent) throw new Error("SSH 服务未返回生命周期对象");
+    const { putDirectory } = sshCurrent;
     const uploaded = await putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true });
     if (!uploaded) throw new Error(`远程目录同步失败: ${remotePath}`);
     await ssh.execute(`printf %s ${this.shell(key)} > ${this.shell(markerPath)}`);
@@ -77,4 +75,4 @@ export const sftp = new Sftp();
 export default mcpserver.metas("/sftp")
   .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口建立并首次同步远程应用目录。", schema: makeRemoteValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sftp.makeRemote(input); return { path: remote.path }; } })
   .add({ protocol: "tool", path: "/hasRemote", description: "检查开发端口对应的远程应用目录是否已分配。", schema: getRemoteValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await sftp.hasRemote(input.port) }) })
-  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的远程应用目录。", schema: getRemoteValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sftp.current(input.port); return { path: remote.path }; } });
+  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的远程应用目录。", schema: getRemoteValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const current = await sftp.remoteIsRunning(); if (!current) throw new Error("SFTP 服务未返回生命周期方法"); const remote = await current(input.port); return { path: remote.path }; } });

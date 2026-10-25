@@ -1,17 +1,14 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import mcpserver from "mcpserver";
 import { ssh } from "../ssh/index.ts";
 
-type Current = () => Promise<void>;
+type Current = {
+  hasRemote(): Promise<boolean>;
+};
 
 class Docker extends Base<Current> {
-  readonly current: Current = async () => {
-    await this.remoteIsRunning();
-  };
-
-  protected remoteIsRunning(): Promise<void> {
-    return this.ensureRemoteIsRunning(async () => {
-      await ssh.execute(`
+  protected async task(): Promise<Current> {
+    await ssh.execute(`
 set -e
 export DEBIAN_FRONTEND=noninteractive
 if ! command -v docker >/dev/null 2>&1; then
@@ -22,7 +19,7 @@ systemctl enable docker --now >/dev/null
 systemctl is-active --quiet docker
 docker info >/dev/null
 `);
-    });
+    return this;
   }
 
   async hasRemote(): Promise<boolean> {
@@ -40,7 +37,7 @@ export default mcpserver.metas("/docker").add({
   schema: {},
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   handler: async () => {
-    await docker.current();
+    await docker.remoteIsRunning();
     return { ready: true };
   },
 })

@@ -1,4 +1,4 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import net from "node:net";
 import mcpserver from "mcpserver";
 import { z } from "zod";
@@ -16,12 +16,9 @@ type Current = {
 
 class SshForward extends Base<(port: number) => Promise<Current>> {
   private readonly handles = new Map<number, ForwardHandle>();
-  readonly current = this.getRemote.bind(this);
-
-  protected remoteIsRunning(): Promise<void> {
-    return this.ensureRemoteIsRunning(async () => {
-      await ssh.execute("true");
-    });
+  protected async task(): Promise<(port: number) => Promise<Current>> {
+    await ssh.execute("true");
+    return this.getRemote.bind(this);
   }
   async makeRemote(port: number): Promise<Current> {
     await this.remoteIsRunning();
@@ -38,7 +35,6 @@ class SshForward extends Base<(port: number) => Promise<Current>> {
     return this.remotePortIsListening(port);
   }
   private async getRemote(port: number): Promise<Current> {
-    await this.remoteIsRunning();
     if (!await this.hasRemote(port)) {
       return this.makeRemote(port);
     }
@@ -73,7 +69,9 @@ class SshForward extends Base<(port: number) => Promise<Current>> {
     if (await this.remotePortIsListening(port)) {
       throw new Error(`开发端口已被远程服务占用: ${port}`);
     }
-    const { forwardIn } = await ssh.current();
+    const sshCurrent = await ssh.remoteIsRunning();
+    if (!sshCurrent) throw new Error("SSH 服务未返回生命周期对象");
+    const { forwardIn } = sshCurrent;
     const handle = await forwardIn("0.0.0.0", port, (_details, accept, reject) => {
       const local = net.createConnection({ host: "127.0.0.1", port });
       const failed = () => { local.destroy(); reject(); };
@@ -92,7 +90,7 @@ export const sshForward = new SshForward();
 
 export default mcpserver.metas("/sshForward")
   .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口建立 SSH 远端端口转发", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sshForward.makeRemote(input.port); return { remotePort: remote.remotePort }; } })
-  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的 SSH 远端端口", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await sshForward.current(input.port); return { remotePort: remote.remotePort }; } })
+  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的 SSH 远端端口", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const current = await sshForward.remoteIsRunning(); if (!current) throw new Error("SSH 转发服务未返回生命周期方法"); const remote = await current(input.port); return { remotePort: remote.remotePort }; } })
   .add({ protocol: "tool", path: "/hasRemote", description: "检查开发端口当前的 SSH 内网穿透句柄及远程监听。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await sshForward.hasRemote(input.port) }) })
   .add({ protocol: "tool", path: "/closeRemote", description: "关闭开发端口对应的 SSH 内网穿透。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await sshForward.closeRemote(input.port); return { closed: true }; } })
   .add({ protocol: "tool", path: "/dispose", description: "关闭全部 SSH 内网穿透。", schema: {}, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async () => { await sshForward.dispose(); return { disposed: true }; } });

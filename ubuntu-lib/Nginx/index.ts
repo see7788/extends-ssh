@@ -1,4 +1,4 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import { certificate } from "../certificate/index.ts";
 import mcpserver from "mcpserver";
 import { z } from "zod";
@@ -29,11 +29,8 @@ type Current = {
   close(): Promise<void>;
 };
 class Nginx extends Base<(port: number) => Promise<Current>> {
-  readonly current = this.getRemote.bind(this);
-
-  protected remoteIsRunning(): Promise<void> {
-    return this.ensureRemoteIsRunning(async () => {
-      await ssh.execute(`set -e
+  protected async task(): Promise<(port: number) => Promise<Current>> {
+    await ssh.execute(`set -e
 NGINX=/www/server/nginx/sbin/nginx
 CONFIG=/www/server/nginx/conf/nginx.conf
 test -x "$NGINX"
@@ -41,10 +38,9 @@ pgrep -f 'nginx: master process' >/dev/null
 "$NGINX" -t -c "$CONFIG" >/dev/null
 ufw allow 80/tcp >/dev/null 2>&1 || true
 ufw allow 443/tcp >/dev/null 2>&1 || true`);
-    });
+    return this.getRemote.bind(this);
   }
   private async getRemote(port: number): Promise<Current> {
-    await this.remoteIsRunning();
     if (!await this.hasRemote(port)) {
       return this.makeRemote(port);
     }
@@ -95,7 +91,9 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
   private async writeRemote(value: number, location: string): Promise<void> {
     const subdomain = this.remoteDescription(value);
     const route = this.routePath(value);
-    const certificatePaths = await certificate.current(subdomain);
+    const certificateCurrent = await certificate.remoteIsRunning();
+    if (!certificateCurrent) throw new Error("证书服务未返回生命周期方法");
+    const certificatePaths = await certificateCurrent(subdomain);
     await ssh.execute(`set -e
 mkdir -p ${this.shell("/www/server/panel/vhost/nginx")}
 cat > ${this.shell(route)} <<'NGINX'
@@ -136,5 +134,5 @@ export const nginx = new Nginx();
 export default mcpserver.metas("/nginx")
   .add({ protocol: "tool", path: "/makeRemote", description: "按开发端口或远程目录写入 HTTPS Nginx 路由；域名 DNS 需指向 SSH 主机。", schema: makeInputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const value = makeInputValidator.parse(input); const remote = await nginx.makeRemote(value.port ?? value.path!); return { subdomain: remote.subdomain }; } })
   .add({ protocol: "tool", path: "/hasRemote", description: "检查开发端口对应的 HTTPS Nginx 路由是否已写入。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await nginx.hasRemote(input.port) }) })
-  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的 HTTPS Nginx 路由配置。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await nginx.current(input.port); return { subdomain: remote.subdomain }; } })
+  .add({ protocol: "tool", path: "/getRemote", description: "检查并读取开发端口对应的 HTTPS Nginx 路由配置。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const current = await nginx.remoteIsRunning(); if (!current) throw new Error("Nginx 服务未返回生命周期方法"); const remote = await current(input.port); return { subdomain: remote.subdomain }; } })
   .add({ protocol: "tool", path: "/closeRemote", description: "关闭开发端口对应的 HTTPS Nginx 路由。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await nginx.closeRemote(input.port); return { closed: true }; } });

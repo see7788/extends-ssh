@@ -1,4 +1,4 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import mcpserver from "mcpserver";
 import { z } from "zod";
 import { ssh } from "../ssh/index.ts";
@@ -14,20 +14,16 @@ type Current = {
 };
 
 class Certificate extends Base<(hostname: string) => Promise<Current>> {
-  readonly current = this.makeRemote.bind(this);
-
-  protected remoteIsRunning(): Promise<void> {
-    return this.ensureRemoteIsRunning(async () => {
-      await ssh.execute(`set -e
+  protected async task(): Promise<(hostname: string) => Promise<Current>> {
+    await ssh.execute(`set -e
 if ! command -v openssl >/dev/null 2>&1; then
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openssl >/dev/null
 fi
 openssl version >/dev/null`);
-    });
+    return this.makeRemote.bind(this);
   }
   async makeRemote(hostname: string): Promise<Current> {
-    await this.remoteIsRunning();
     const base = `${store.getState().certificate.root}/${hostname}`;
     const certPath = `${base}/fullchain.pem`;
     const keyPath = `${base}/privkey.pem`;
@@ -65,7 +61,11 @@ export default mcpserver.metas("/certificate").add({
   description: "为指定域名生成并确保可用的自签名 TLS 证书。",
   schema: inputValidator.shape,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  handler: async input => await certificate.current(input.hostname),
+  handler: async input => {
+    const current = await certificate.remoteIsRunning();
+    if (!current) throw new Error("证书服务未返回生命周期方法");
+    return current(input.hostname);
+  },
 })
   .add({
     protocol: "tool",

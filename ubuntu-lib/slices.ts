@@ -1,6 +1,7 @@
 ﻿import mcpserver from "mcpserver";
 import aptSlice from "./apt/index.ts";
 import dockerSlice from "./docker/index.ts";
+import chromiumServerKasmSlice from "./chromiumServer/index.ts";
 import certificateSlice from "./certificate/index.ts";
 import sshForwardSlice from "./sshForward/index.ts";
 import nginxSlice from "./nginx/index.ts";
@@ -10,10 +11,12 @@ import pm2Slice from "./pm2/index.ts";
 import sftpSlice from "./sftp/index.ts";
 import sshSlice from "./ssh/index.ts";
 import stunServerSlice from "./stunServer/index.ts";
+import vpnServerSlice from "./vpnServer/index.ts";
 
 export default mcpserver.metas("/")
   .baseAdd(aptSlice)
   .baseAdd(dockerSlice)
+  .baseAdd(chromiumServerKasmSlice)
   .baseAdd(certificateSlice)
   .baseAdd(sshForwardSlice)
   .baseAdd(nginxSlice)
@@ -23,4 +26,5 @@ export default mcpserver.metas("/")
   .baseAdd(sftpSlice)
   .baseAdd(sshSlice)
   .baseAdd(stunServerSlice)
+  .baseAdd(vpnServerSlice)
   .import({ name: "ubuntu-lib", description: "单远程 Ubuntu 服务基础能力。" });

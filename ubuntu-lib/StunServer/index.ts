@@ -1,4 +1,4 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
 import { docker } from "../docker/index.ts";
@@ -12,29 +12,24 @@ type Current = {
   readonly secure: false;
 };
 
-class StunServer extends Base<() => Promise<Current>> {
-  readonly current = async (): Promise<Current> => {
-    await this.remoteIsRunning();
-    const { ssh: sshState, stunServer } = store.getState();
-    return { host: sshState.host, port: stunServer.port, secure: false };
-  };
-
-  protected remoteIsRunning(): Promise<void> {
-    return this.ensureRemoteIsRunning(async () => {
-      const { ssh: sshState, stunServer } = store.getState();
-      if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
-        throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
-      }
-      if (stunServer.port === sshState.port || stunServer.port === 80 || stunServer.port === 443) {
-        throw new Error(`STUN 端口与固定服务端口冲突: ${String(stunServer.port)}`);
-      }
-      const state = { host: sshState.host, port: stunServer.port };
-      await docker.current();
-      const occupancy = await ssh.execute(`if docker inspect coturn >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' coturn)" = true ]; then printf own; elif ss -ltnH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }' || ss -lunH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }'; then printf occupied; else printf free; fi`);
-      if (occupancy.stdout.trim() === "occupied") {
-        throw new Error(`STUN 端口已被远程服务占用: ${String(state.port)}`);
-      }
-      await ssh.execute(`
+class StunServer extends Base<Current> {
+  protected async task(): Promise<Current> {
+    const { stunServer } = store.getState();
+    const { host } = await ssh.config();
+    if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
+      throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
+    }
+    const { port: sshPort } = await ssh.config();
+    if (stunServer.port === sshPort || stunServer.port === 80 || stunServer.port === 443) {
+      throw new Error(`STUN 端口与固定服务端口冲突: ${String(stunServer.port)}`);
+    }
+    const state = { host, port: stunServer.port };
+    await docker.remoteIsRunning();
+    const occupancy = await ssh.execute(`if docker inspect coturn >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' coturn)" = true ]; then printf own; elif ss -ltnH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }' || ss -lunH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }'; then printf occupied; else printf free; fi`);
+    if (occupancy.stdout.trim() === "occupied") {
+      throw new Error(`STUN 端口已被远程服务占用: ${String(state.port)}`);
+    }
+    await ssh.execute(`
 set -e
 docker info >/dev/null
 if docker inspect coturn >/dev/null 2>&1; then
@@ -52,9 +47,8 @@ ufw reload >/dev/null
 test "$(docker inspect -f '{{.State.Running}}' coturn)" = true
 ss -lun | grep -Eq ':${state.port}[[:space:]]'
 `);
-
-      await this.bindingRequest(state.host, state.port);
-    });
+    await this.bindingRequest(state.host, state.port);
+    return { host, port: stunServer.port, secure: false };
   }
 
   async hasRemote(): Promise<boolean> {
@@ -130,7 +124,7 @@ export default mcpserver.metas("/stunServer")
     description: "确保并读取 STUN 连接配置。",
     schema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async () => stunServer.current(),
+    handler: async () => stunServer.remoteIsRunning(),
   })
   .add({
     protocol: "tool",
@@ -139,7 +133,7 @@ export default mcpserver.metas("/stunServer")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async () => {
-      await stunServer.current();
+      await stunServer.remoteIsRunning();
       return { ready: true };
     },
   });

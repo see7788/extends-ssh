@@ -1,4 +1,4 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import { docker } from "../docker/index.ts";
 import mcpserver from "mcpserver";
 import { ssh } from "../ssh/index.ts";
@@ -12,26 +12,14 @@ type Current = {
   readonly key: string;
 };
 
-class Peerjs extends Base<() => Promise<Current>> {
-  readonly current = async (): Promise<Current> => {
-    await this.remoteIsRunning();
-    const { peerjs, ssh: sshState } = store.getState();
-    return {
-      host: sshState.host,
-      port: peerjs.listenPort,
-      path: peerjs.pathname,
-      secure: false,
-      key: peerjs.key,
-    };
-  };
-
-  protected remoteIsRunning(): Promise<void> {
-    return this.ensureRemoteIsRunning(async () => {
-      const { peerjs, ssh: sshState } = store.getState();
-      const { image, key, listenPort, pathname } = peerjs;
-      const configuration = `${image}|${listenPort}|${pathname}|${key}`;
-      await docker.current();
-      await ssh.execute(`
+class Peerjs extends Base<Current> {
+  protected async task(): Promise<Current> {
+    const { peerjs } = store.getState();
+    const { host } = await ssh.config();
+    const { image, key, listenPort, pathname } = peerjs;
+    const configuration = `${image}|${listenPort}|${pathname}|${key}`;
+    await docker.remoteIsRunning();
+    await ssh.execute(`
 set -e
 docker info >/dev/null
 if docker inspect peerjs >/dev/null 2>&1; then
@@ -62,14 +50,20 @@ done
 docker logs --tail 40 peerjs >&2 || true
 exit 1
 `);
-      const health = await fetch(
-      `http://${sshState.host}:${listenPort}${pathname}`,
+    const health = await fetch(
+      `http://${host}:${listenPort}${pathname}`,
       { signal: AbortSignal.timeout(10_000) },
     );
-      if (!health.ok) {
-        throw new Error(`PeerJS 连接健康检查失败: HTTP ${health.status}`);
-      }
-    });
+    if (!health.ok) {
+      throw new Error(`PeerJS 连接健康检查失败: HTTP ${health.status}`);
+    }
+    return {
+      host,
+      port: listenPort,
+      path: pathname,
+      secure: false,
+      key,
+    };
   }
 
   async hasRemote(): Promise<boolean> {
@@ -109,7 +103,7 @@ export default mcpserver.metas("/peerjs")
     description: "确保并读取 PeerJS 连接配置。",
     schema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async () => peerjs.current(),
+    handler: async () => peerjs.remoteIsRunning(),
   })
   .add({
     protocol: "tool",
@@ -118,7 +112,7 @@ export default mcpserver.metas("/peerjs")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async () => {
-      await peerjs.current();
+      await peerjs.remoteIsRunning();
       return { ready: true };
     },
   });

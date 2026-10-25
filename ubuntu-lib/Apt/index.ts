@@ -1,17 +1,14 @@
-﻿import Base from "../public/Base.ts";
+﻿import Base from "../public/index.ts";
 import mcpserver from "mcpserver";
 import { ssh } from "../ssh/index.ts";
 
-type Current = () => Promise<void>;
+type Current = {
+  hasRemote(): Promise<boolean>;
+};
 
 class Apt extends Base<Current> {
-  readonly current: Current = async () => {
-    await this.remoteIsRunning();
-  };
-
-  protected remoteIsRunning(): Promise<void> {
-    return this.ensureRemoteIsRunning(async () => {
-      await ssh.execute(`
+  protected async task(): Promise<Current> {
+    await ssh.execute(`
 set -e
 command -v apt-get >/dev/null 2>&1
 export DEBIAN_FRONTEND=noninteractive
@@ -28,7 +25,7 @@ for COMMAND in lsof netstat unzip wget ufw sudo curl git gpg lsb_release xz ss; 
   command -v "$COMMAND" >/dev/null
 done
 `);
-    });
+    return this;
   }
 
   async hasRemote(): Promise<boolean> {
@@ -57,7 +54,7 @@ export default mcpserver.metas("/apt").add({
   schema: {},
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   handler: async () => {
-    await apt.current();
+    await apt.remoteIsRunning();
     return { ready: true };
   },
 })
