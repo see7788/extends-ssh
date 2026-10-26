@@ -8,16 +8,7 @@ export default abstract class Base<T> {
   //key是全局不重复值，通常用本地绝对路径|包名称
   //资源服务title、进程title、子域名、源码、缓存、日志、静态资源，等等一切，全部围绕端口号分配
 
-  async portUse(port: number, key: string) {
-    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-      throw new RangeError(`Invalid port: ${port}`);
-    }
-
-    const ownerKey = key.trim();
-    if (!ownerKey) {
-      throw new TypeError("The port resource key cannot be empty");
-    }
-
+  async portUse(port: number, ownerKey: string) {
     const state = store.getState();
     const domain = state.domain.trim();
     if (!domain) {
@@ -25,20 +16,18 @@ export default abstract class Base<T> {
     }
 
     const current = state.prots[port];
-    if (current && current.key !== ownerKey) {
-      throw new Error(`Port ${port} is already owned by ${current.key}`);
+    if (current && current.ownerKey !== ownerKey) {
+      throw new Error(`Port ${port} is already owned by ${current.ownerKey}`);
     }
 
     if (!current) {
       store.setState((draft) => {
-        draft.prots[port] = { key: ownerKey };
+        draft.prots[port] = { ownerKey, port };
       });
     }
 
     return {
       ownerKey,
-      port,
-      domain,
       service: `/srv/service/${port}`,//服务部署资源
       src: `/srv/src/${port}`,//源代码
       www: `/srv/www/${port}`,//静态资源

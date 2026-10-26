@@ -11,25 +11,15 @@ class Index {
     return {
       name: `consumerPlugin${producerDevPort}`,
       configResolved: async ({ root }) => {
-        const producer = store.getState().serverRoot[producerDevPort];
-        if (!producer?.define) {
-          return;
-        }
-        const name = `declare${producerDevPort}`;
-        const define = {
-          ...consumerDefine,
-          [name]: producer.define,
-        };
         const declareDirectory = path.join(root, "src", "declare");
         await mkdir(declareDirectory, { recursive: true });
-        const declaration = `export default ${JSON.stringify(
-          define,
-          null,
-          2,
-        )} as const;\n`;
         await writeFile(
           path.join(declareDirectory, `default.ts`),
-          `\uFEFF${declaration.replace(/\r?\n/g, "\r\n")}`,
+          `export default ${JSON.stringify(
+            { ...consumerDefine, ...store.getState().serverRoot[producerDevPort].define },
+            null,
+            2,
+          )} as const;`,
           "utf8",
         );
       },
@@ -47,4 +37,4 @@ class Index {
   }
 }
 
-export default  new Index
+export default new Index

@@ -166,7 +166,6 @@ export default class <T extends Partial<state_t> & { devPort: number }> {
     this: Self,
     producerDefine: T,
   ): Plugin {
-    const define = { ...this.serviceDefine(), ...producerDefine };
     return {
       name: `producerPlugin${this.state.devPort}`,
       enforce: "post",
@@ -179,20 +178,18 @@ export default class <T extends Partial<state_t> & { devPort: number }> {
         store.setState(s => {
           s.serverRoot[this.state.devPort] = {
             packagePath: root,
-            producerDefine,
-            define,
+            define:producerDefine,
           };
         });
         const declareDirectory = path.join(root, "src", "declare");
         await mkdir(declareDirectory, { recursive: true });
-        const declaration = `export default ${JSON.stringify(
-          define,
-          null,
-          2,
-        )} as const;\n`;
         await writeFile(
           path.join(declareDirectory, `default.ts`),
-          `\uFEFF${declaration.replace(/\r?\n/g, "\r\n")}`,
+          `export default ${JSON.stringify(
+            { ...this.serviceDefine(), ...producerDefine },
+            null,
+            2,
+          )} as const;`,
           "utf8",
         );
       },
