@@ -24,15 +24,14 @@ openssl version >/dev/null`);
     const base = `${store.getState().certificate.root}/${hostname}`;
     const certPath = `${base}/fullchain.pem`;
     const keyPath = `${base}/privkey.pem`;
-    const shell = (item: string) => `'${item.replace(/'/g, `\'"'"'`)}'`;
     await ssh.execute(`set -e
-mkdir -p ${shell(base)}
-if [ ! -s ${shell(certPath)} ] || [ ! -s ${shell(keyPath)} ] || ! openssl x509 -checkend 2592000 -noout -in ${shell(certPath)} >/dev/null 2>&1; then
+mkdir -p ${ssh.quoteShellArg(base)}
+if [ ! -s ${ssh.quoteShellArg(certPath)} ] || [ ! -s ${ssh.quoteShellArg(keyPath)} ] || ! openssl x509 -checkend 2592000 -noout -in ${ssh.quoteShellArg(certPath)} >/dev/null 2>&1; then
   openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
-    -keyout ${shell(keyPath)} -out ${shell(certPath)} \
-    -subj ${shell(`/CN=${hostname}`)} -addext ${shell(`subjectAltName=DNS:${hostname}`)} >/dev/null 2>&1
-  chmod 600 ${shell(keyPath)}
-  chmod 644 ${shell(certPath)}
+    -keyout ${ssh.quoteShellArg(keyPath)} -out ${ssh.quoteShellArg(certPath)} \
+    -subj ${ssh.quoteShellArg(`/CN=${hostname}`)} -addext ${ssh.quoteShellArg(`subjectAltName=DNS:${hostname}`)} >/dev/null 2>&1
+  chmod 600 ${ssh.quoteShellArg(keyPath)}
+  chmod 644 ${ssh.quoteShellArg(certPath)}
 fi`);
     return { certPath, keyPath };
   }
@@ -43,10 +42,9 @@ fi`);
     const base = `${store.getState().certificate.root}/${value}`;
     const certPath = `${base}/fullchain.pem`;
     const keyPath = `${base}/privkey.pem`;
-    const shell = (item: string) => `'${item.replace(/'/g, `\'"'"'`)}'`;
-    const result = await ssh.execute(`if [ -s ${shell(certPath)} ] \
-  && [ -s ${shell(keyPath)} ] \
-  && openssl x509 -checkend 2592000 -noout -in ${shell(certPath)} >/dev/null 2>&1; then printf true; else printf false; fi`);
+    const result = await ssh.execute(`if [ -s ${ssh.quoteShellArg(certPath)} ] \
+  && [ -s ${ssh.quoteShellArg(keyPath)} ] \
+  && openssl x509 -checkend 2592000 -noout -in ${ssh.quoteShellArg(certPath)} >/dev/null 2>&1; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
 }

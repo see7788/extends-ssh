@@ -12,6 +12,7 @@ type SftpDirectory = {
 export default class extends Base {
   vitePlugin(port: number): Plugin {
     const vite = new Vite();
+    const nginx = new Nginx("sftp");
     let root!: string;
     return {
       name: `sftpPlugin${port}`,
@@ -19,12 +20,11 @@ export default class extends Base {
       configResolved: async config => {
         root = config.root;
         vite.mergeState(port, {
-          sftp: { host: `${port}.${this.domain}` },
+          sftp: { url: nginx.getUrl(port) },
         });
       },
       closeBundle: async () => {
         const remote = await this.makeRemote({ port, localPath: root });
-        const nginx = new Nginx();
         await nginx.makeRemote(remote.path);
       },
     };
@@ -48,7 +48,7 @@ export default class extends Base {
     await this.setupReady();
     const ssh = new Ssh();
     const markerPath = `${remotePath}/.extends-ssh-port`;
-    const result = await ssh.execute(`test -f ${this.shell(markerPath)} && cat ${this.shell(markerPath)} || true`);
+    const result = await ssh.execute(`test -f ${ssh.quoteShellArg(markerPath)} && cat ${ssh.quoteShellArg(markerPath)} || true`);
     return result.stdout.trim() === String(port);
   }
   async makeRemote(input: { port: number; localPath: string }): Promise<SftpDirectory> {
@@ -64,18 +64,15 @@ export default class extends Base {
     const remotePath = this.remotePath(value.port);
     const key = String(value.port);
     const markerPath = `${remotePath}/.extends-ssh-port`;
-    const marker = await ssh.execute(`if [ -e ${this.shell(remotePath)} ]; then if [ -f ${this.shell(markerPath)} ]; then cat ${this.shell(markerPath)}; else printf __occupied__; fi; fi`);
+    const marker = await ssh.execute(`if [ -e ${ssh.quoteShellArg(remotePath)} ]; then if [ -f ${ssh.quoteShellArg(markerPath)} ]; then cat ${ssh.quoteShellArg(markerPath)}; else printf __occupied__; fi; fi`);
     const owner = marker.stdout.trim();
     if (owner === "__occupied__") throw new Error(`远程目录已被其他资源占用: ${remotePath}`);
     if (owner && owner !== key) throw new Error(`远程目录已被开发端口 ${owner} 占用: ${remotePath}`);
     const uploaded = await ssh.putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true });
     if (!uploaded) throw new Error(`远程目录同步失败: ${remotePath}`);
-    await ssh.execute(`printf %s ${this.shell(key)} > ${this.shell(markerPath)}`);
+    await ssh.execute(`printf %s ${ssh.quoteShellArg(key)} > ${ssh.quoteShellArg(markerPath)}`);
   }
 
-  private shell(value: string): string {
-    return `'${value.replace(/'/g, `\'"'"'`)}'`;
-  }
   public remotePath(port: number): `${string}/${number}` {
     return `${store.getState().sftp.remoteRoot}/${port}`;
   }

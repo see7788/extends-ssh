@@ -45,7 +45,7 @@ if ! id -u ${browserConfig.user} >/dev/null 2>&1; then useradd --create-home --s
 mkdir -p /etc/cloud-browser ${browserConfig.home}/.vnc
 chown -R ${browserConfig.user}:${browserConfig.user} /etc/cloud-browser ${browserConfig.home}/.vnc
 if [ ! -s ${browserConfig.targetFile} ]; then
-  printf %s ${this.shell(Buffer.from(browserConfig.targetDefault, "utf8").toString("base64"))} | base64 -d > ${browserConfig.targetFile}
+  printf %s ${ssh.quoteShellArg(Buffer.from(browserConfig.targetDefault, "utf8").toString("base64"))} | base64 -d > ${browserConfig.targetFile}
 fi
 chown ${browserConfig.user}:${browserConfig.user} ${browserConfig.targetFile}
 chmod 644 ${browserConfig.targetFile}
@@ -172,7 +172,7 @@ systemctl restart ${browserConfig.sessionService}
     const encoded = Buffer.from(target, "utf8").toString("base64");
     await ssh.execute(`
 set -e
-printf %s ${this.shell(encoded)} | base64 -d > ${browserConfig.targetFile}
+printf %s ${ssh.quoteShellArg(encoded)} | base64 -d > ${browserConfig.targetFile}
 chown ${browserConfig.user}:${browserConfig.user} ${browserConfig.targetFile}
 chmod 644 ${browserConfig.targetFile}
 systemctl restart ${browserConfig.sessionService}
@@ -193,7 +193,4 @@ systemctl restart ${browserConfig.sessionService}
     return result.stdout.trim();
   }
 
-  private shell(value: string): string {
-    return `'${value.replace(/'/g, `\'"'"'`)}'`;
-  }
 }

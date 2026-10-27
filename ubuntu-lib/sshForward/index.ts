@@ -1,6 +1,9 @@
 ﻿import Base from "../public/index.ts";
 import net from "node:net";
 import Ssh from "../ssh/index.ts";
+import Nginx from "../nginx/index.ts";
+import Vite from "../vite/index.ts";
+import type { Plugin } from "vite";
 type Handle = { dispose(): Promise<void>; port: number };
 type ForwardHandle = { handle: Handle };
 type SshForwardResult = {
@@ -11,10 +14,18 @@ type SshForwardResult = {
 
 export default class extends Base {
   private readonly handles = new Map<number, ForwardHandle>();
-  vite(port: number) {
+  vitePlugin(port: number): Plugin {
+    const nginx = new Nginx("sshForward");
+    const vite = new Vite();
     return {
-      state: { host: `${port}.${this.domain}` },
-      actions: async () => {
+      name: `sshForwardPlugin${port}`,
+      enforce: "pre",
+      configResolved: async () => {
+        vite.mergeState(port, {
+          sshForward: { url: nginx.getUrl(port) },
+        });
+      },
+      configureServer: async () => {
         const forward = await this.getRemote(port);
         return () => forward.close();
       },

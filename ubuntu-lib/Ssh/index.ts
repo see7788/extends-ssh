@@ -44,6 +44,9 @@ export default class extends Base {
     const { host, port, username } = store.getState().ssh;
     return { host, port, username };
   }
+  quoteShellArg(value: string): string {
+    return "'" + value.replace(/'/g, "'\"'\"'") + "'";
+  }
 
   async execute(command: string): Promise<SSHExecCommandResponse> {
     await this.connectionReady();

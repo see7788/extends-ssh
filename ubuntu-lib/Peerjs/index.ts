@@ -3,6 +3,8 @@ import Docker from "../docker/index.ts";
 import Ssh from "../ssh/index.ts";
 import StunServer from "../stunServer/index.ts";
 import store from "../store/index.ts";
+import Vite from "../vite/index.ts";
+import type { Plugin } from "vite";
 
 export default class extends Base {
   protected async setup(): Promise<void> {
@@ -18,24 +20,24 @@ set -e
 docker info >/dev/null
 if docker inspect peerjs >/dev/null 2>&1; then
   CURRENT_CONFIGURATION="$(docker inspect -f '{{ index .Config.Labels "extends-ssh.peerjs.configuration" }}' peerjs)"
-  if [ "$CURRENT_CONFIGURATION" != ${this.shell(configuration)} ]; then
+  if [ "$CURRENT_CONFIGURATION" != ${ssh.quoteShellArg(configuration)} ]; then
     docker rm -f peerjs >/dev/null
   fi
 fi
 if ! docker inspect peerjs >/dev/null 2>&1; then
-  docker pull ${this.shell(image)}
+  docker pull ${ssh.quoteShellArg(image)}
   docker run -d --restart=unless-stopped --name peerjs \
-    --label ${this.shell(`extends-ssh.peerjs.configuration=${configuration}`)} \
+    --label ${ssh.quoteShellArg(`extends-ssh.peerjs.configuration=${configuration}`)} \
     -p 0.0.0.0:${listenPort}:${listenPort} \
-    ${this.shell(image)} \
-    --port ${listenPort} --path ${this.shell(pathname)} \
-    --key ${this.shell(key)} --proxied >/dev/null
+    ${ssh.quoteShellArg(image)} \
+    --port ${listenPort} --path ${ssh.quoteShellArg(pathname)} \
+    --key ${ssh.quoteShellArg(key)} --proxied >/dev/null
 else
   docker start peerjs >/dev/null
 fi
 test "$(docker inspect -f '{{.State.Running}}' peerjs)" = true
 for attempt in $(seq 1 40); do
-  if curl --fail --silent ${this.shell(`http://127.0.0.1:${listenPort}${pathname}`)} \
+  if curl --fail --silent ${ssh.quoteShellArg(`http://127.0.0.1:${listenPort}${pathname}`)} \
     | grep -q 'PeerJS'; then
     exit 0
   fi
@@ -69,19 +71,19 @@ exit 1
     };
   }
 
-  vite() {
+  vitePlugin(devPort: number): Plugin {
+    const vite = new Vite();
     return {
-      state: this.endpoint,
-      actions: async () => {
+      name: `peerjsPlugin${devPort}`,
+      enforce: "pre",
+      configResolved: async () => {
+        vite.mergeState(devPort, { peerjs: this.endpoint });
+      },
+      configureServer: async () => {
         const stunServer = new StunServer();
         await this.setupReady();
         await stunServer.setupReady();
-        return async () => { };
       },
     };
-  }
-
-  private shell(value: string): string {
-    return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 }

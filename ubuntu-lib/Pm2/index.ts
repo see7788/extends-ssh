@@ -21,12 +21,13 @@ export default class extends Base {
     input: Omit<Parameters<this["makeRemote"]>[0], "port" | "cwd">,
   ): Plugin {
     const vite = new Vite();
+    const nginx = new Nginx("pm2");
     return {
       name: `pm2Plugin${port}`,
       enforce: "post",
       configResolved: async () => {
         vite.mergeState(port, {
-          pm2: { host: `${port}.${this.domain}` },
+          pm2: { url: nginx.getUrl(port) },
         });
       },
       closeBundle: async () => {
@@ -36,7 +37,6 @@ export default class extends Base {
           cwd: sftp.remotePath(port),
           port,
         });
-        const nginx = new Nginx();
         await nginx.makeRemote(port);
       },
     };
@@ -74,11 +74,11 @@ export default class extends Base {
       throw new Error(`开发端口已被其他远程服务占用: ${input.port}`);
     }
     const name = String(input.port);
-    const environment = Object.entries(input.environment ?? {}).map(([key, item]) => `${key}=${this.shell(item)}`).join(" ");
+    const environment = Object.entries(input.environment ?? {}).map(([key, item]) => `${key}=${ssh.quoteShellArg(item)}`).join(" ");
     await ssh.execute(`set -e
-pm2 delete ${this.shell(name)} >/dev/null 2>&1 || true
-cd ${this.shell(input.cwd)}
-${environment} pm2 start bash --name ${this.shell(name)} -- -lc ${this.shell(input.command)}
+pm2 delete ${ssh.quoteShellArg(name)} >/dev/null 2>&1 || true
+cd ${ssh.quoteShellArg(input.cwd)}
+${environment} pm2 start bash --name ${ssh.quoteShellArg(name)} -- -lc ${ssh.quoteShellArg(input.command)}
 pm2 save --force >/dev/null`);
     return {
       name,
@@ -101,25 +101,25 @@ pm2 save --force >/dev/null`);
   }
   async hasRemote(port: number): Promise<boolean> {
     const ssh = new Ssh();
-    const result = await ssh.execute(`if command -v pm2 >/dev/null 2>&1 && pm2 describe ${this.shell(String(port))} >/dev/null 2>&1; then printf true; else printf false; fi`);
+    const result = await ssh.execute(`if command -v pm2 >/dev/null 2>&1 && pm2 describe ${ssh.quoteShellArg(String(port))} >/dev/null 2>&1; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
   async stop(port: number): Promise<void> {
     await this.setupReady();
     const ssh = new Ssh();
-    const name = this.shell(String(port));
+    const name = ssh.quoteShellArg(String(port));
     await ssh.execute(`pm2 stop ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   async restart(port: number): Promise<void> {
     await this.setupReady();
     const ssh = new Ssh();
-    const name = this.shell(String(port));
+    const name = ssh.quoteShellArg(String(port));
     await ssh.execute(`pm2 restart ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   async closeRemote(port: number): Promise<void> {
     await this.setupReady();
     const ssh = new Ssh();
-    const name = this.shell(String(port));
+    const name = ssh.quoteShellArg(String(port));
     await ssh.execute(`pm2 delete ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   private async remotePortIsListening(port: number): Promise<boolean> {
@@ -127,5 +127,4 @@ pm2 save --force >/dev/null`);
     const result = await ssh.execute(`ss -ltnH | awk '$4 ~ /(^|:)${port}$/ { found=1 } END { print found ? "true" : "false" }'`);
     return result.stdout.trim() === "true";
   }
-  private shell(value: string): string { return "'" + value.replace(/'/g, "'\"'\"'") + "'"; }
 }

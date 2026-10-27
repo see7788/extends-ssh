@@ -61,8 +61,8 @@ chmod 700 ${vpnConfig.configDir}
 if [ ! -x ${vpnConfig.binary} ]; then
   release_json=$(mktemp)
   asset_url=$(mktemp)
-  curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 ${this.shell(vpnConfig.releaseApi)} -o "$release_json"
-  python3 - "$release_json" ${this.shell(vpnConfig.binaryAssetPrefix)} > "$asset_url" <<'PY'
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 ${ssh.quoteShellArg(vpnConfig.releaseApi)} -o "$release_json"
+  python3 - "$release_json" ${ssh.quoteShellArg(vpnConfig.binaryAssetPrefix)} > "$asset_url" <<'PY'
 import json
 import pathlib
 import sys
@@ -136,7 +136,7 @@ fi
 set -e
 subscription_response=$(mktemp)
 trap 'rm -f "$subscription_response"' EXIT
-curl -fsSL --compressed --retry ${vpnConfig.subscription.retry} --connect-timeout ${vpnConfig.subscription.connectTimeoutSeconds} --max-time ${vpnConfig.subscription.maxTimeSeconds} --url ${this.shell(subscriptionUrl)} -o "$subscription_response"
+curl -fsSL --compressed --retry ${vpnConfig.subscription.retry} --connect-timeout ${vpnConfig.subscription.connectTimeoutSeconds} --max-time ${vpnConfig.subscription.maxTimeSeconds} --url ${ssh.quoteShellArg(subscriptionUrl)} -o "$subscription_response"
 python3 - "$subscription_response" ${vpnConfig.configFile} <<'PY'
 import base64
 import pathlib
@@ -157,8 +157,8 @@ if not isinstance(config, dict):
 if not isinstance(config, dict):
     raise SystemExit("订阅内容不是 Clash/Mihomo YAML 配置")
 
-selection_group_name = ${this.shell(vpnConfig.proxySelection.groupName)}
-selection_proxy_name = ${this.shell(vpnConfig.proxySelection.proxyName)}
+selection_group_name = ${ssh.quoteShellArg(vpnConfig.proxySelection.groupName)}
+selection_proxy_name = ${ssh.quoteShellArg(vpnConfig.proxySelection.proxyName)}
 if bool(selection_group_name) != bool(selection_proxy_name):
     raise SystemExit("proxySelection.groupName 和 proxySelection.proxyName 必须同时配置")
 if selection_group_name:
@@ -177,22 +177,22 @@ config["mixed-port"] = ${vpnConfig.mixedPort}
 config["socks-port"] = ${vpnConfig.socksPort}
 config["redir-port"] = ${vpnConfig.redirPort}
 config["allow-lan"] = ${vpnConfig.allowLan ? "True" : "False"}
-config["mode"] = ${this.shell(vpnConfig.mode)}
-config["external-controller"] = ${this.shell(vpnConfig.externalController)}
+config["mode"] = ${ssh.quoteShellArg(vpnConfig.mode)}
+config["external-controller"] = ${ssh.quoteShellArg(vpnConfig.externalController)}
 tun = config.get("tun") if isinstance(config.get("tun"), dict) else {}
 tun.update({
     "enable": True,
-    "stack": ${this.shell(vpnConfig.tunStack)},
+    "stack": ${ssh.quoteShellArg(vpnConfig.tunStack)},
     "auto-route": ${vpnConfig.tunAutoRoute ? "True" : "False"},
     "auto-redirect": ${vpnConfig.tunAutoRedirect ? "True" : "False"},
     "auto-detect-interface": ${vpnConfig.tunAutoDetectInterface ? "True" : "False"},
-    "device": ${this.shell(vpnConfig.tunName)},
+    "device": ${ssh.quoteShellArg(vpnConfig.tunName)},
 })
 config["tun"] = tun
 dns = config.get("dns") if isinstance(config.get("dns"), dict) else {}
 dns.setdefault("enable", ${vpnConfig.dns.enable ? "True" : "False"})
-dns.setdefault("listen", ${this.shell(vpnConfig.dns.listen)})
-dns.setdefault("enhanced-mode", ${this.shell(vpnConfig.dns.enhancedMode)})
+dns.setdefault("listen", ${ssh.quoteShellArg(vpnConfig.dns.listen)})
+dns.setdefault("enhanced-mode", ${ssh.quoteShellArg(vpnConfig.dns.enhancedMode)})
 dns.setdefault("nameserver", ${JSON.stringify(vpnConfig.dns.nameserver)})
 config["dns"] = dns
 target_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -228,7 +228,4 @@ printf '%s %s %s' "$configured" "$running" "$tun"
     };
   }
 
-  private shell(value: string): string {
-    return `'${value.replace(/'/g, `\'"'"'`)}'`;
-  }
 }
