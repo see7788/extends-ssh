@@ -1,14 +1,10 @@
 ﻿import Base from "../public/index.ts";
 import store from "../store/index.ts";
-import mcpserver from "mcpserver";
-import { ssh } from "../ssh/index.ts";
+import Ssh from "../ssh/index.ts";
 
-type Current = {
-  hasRemote(): Promise<boolean>;
-};
-
-class Nodejs extends Base<Current> {
-  protected async task(): Promise<Current> {
+export default class extends Base {
+  protected async setup(): Promise<void> {
+    const ssh = new Ssh();
     const { version, architecture, sha256 } = store.getState().nodejs;
     const archive = `node-v${version}-${architecture}.tar.xz`;
     const root = store.getState().nodejs.root;
@@ -31,10 +27,10 @@ if [ ! -x ${shell(`${root}/bin/node`)} ]; then
 fi
 for command in node npm npx corepack; do ln -sfn ${shell(`${root}/bin`)}"/$command" "/usr/local/bin/$command"; done
 node --version`);
-    return this;
   }
 
   async hasRemote(): Promise<boolean> {
+    const ssh = new Ssh();
     const { root } = store.getState().nodejs;
     const shell = (value: string) => `'${value.replace(/'/g, `\'"'"'`)}'`;
     const result = await ssh.execute(`if [ -x ${shell(`${root}/bin/node`)} ] \
@@ -43,25 +39,3 @@ node --version`);
     return result.stdout.trim() === "true";
   }
 }
-
-export const nodejs = new Nodejs();
-
-export default mcpserver.metas("/nodejs").add({
-  protocol: "tool",
-  path: "/ensure",
-  description: "确保远端 Node.js 运行环境可用。",
-  schema: {},
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  handler: async () => {
-    await nodejs.remoteIsRunning();
-    return { ready: true };
-  },
-})
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查远端 Node.js 运行环境是否已经存在，不执行安装。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => ({ hasRemote: await nodejs.hasRemote() }),
-  });

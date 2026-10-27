@@ -1,11 +1,10 @@
 ﻿import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
-type ServerRootState = {
-  serverRoot: Record<number, {
+type VitePluginState = {
+  vitePlugin: Record<number, {
     packagePath: string;
-    define: Record<string, any>;
+    define: Record<string, unknown>;
   }>;
 };
 
-// export default (() => ({ serverRoot: {} })) satisfies ImmerStateCreator<ServerRootState>
-export const c: ImmerStateCreator<ServerRootState>=() => ({ serverRoot: {} })
-export default c
+const vitePluginStore: ImmerStateCreator<VitePluginState> = () => ({ vitePlugin: {} });
+export default vitePluginStore;

@@ -1,19 +1,23 @@
 ﻿import Base from "../public/index.ts";
 import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
-import { docker } from "../docker/index.ts";
-import mcpserver from "mcpserver";
-import { ssh } from "../ssh/index.ts";
+import Docker from "../docker/index.ts";
+import Ssh from "../ssh/index.ts";
 import store from "../store/index.ts";
 
-type Current = {
+type StunEndpoint = {
   readonly host: string;
   readonly port: number;
   readonly secure: false;
 };
 
-class StunServer extends Base<Current> {
-  protected async task(): Promise<Current> {
+export default class extends Base {
+  get port(): number {
+    return store.getState().stunServer.port;
+  }
+  protected async setup(): Promise<void> {
+    const docker = new Docker();
+    const ssh = new Ssh();
     const { stunServer } = store.getState();
     const { host } = await ssh.config();
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
@@ -24,7 +28,7 @@ class StunServer extends Base<Current> {
       throw new Error(`STUN 端口与固定服务端口冲突: ${String(stunServer.port)}`);
     }
     const state = { host, port: stunServer.port };
-    await docker.remoteIsRunning();
+    await docker.setupReady();
     const occupancy = await ssh.execute(`if docker inspect coturn >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' coturn)" = true ]; then printf own; elif ss -ltnH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }' || ss -lunH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }'; then printf occupied; else printf free; fi`);
     if (occupancy.stdout.trim() === "occupied") {
       throw new Error(`STUN 端口已被远程服务占用: ${String(state.port)}`);
@@ -48,10 +52,18 @@ test "$(docker inspect -f '{{.State.Running}}' coturn)" = true
 ss -lun | grep -Eq ':${state.port}[[:space:]]'
 `);
     await this.bindingRequest(state.host, state.port);
+  }
+
+  async status(): Promise<StunEndpoint> {
+    await this.setupReady();
+    const ssh = new Ssh();
+    const { stunServer } = store.getState();
+    const { host } = await ssh.config();
     return { host, port: stunServer.port, secure: false };
   }
 
   async hasRemote(): Promise<boolean> {
+    const ssh = new Ssh();
     const { stunServer } = store.getState();
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) return false;
     const result = await ssh.execute(`if docker inspect coturn >/dev/null 2>&1 \
@@ -106,34 +118,3 @@ ss -lun | grep -Eq ':${state.port}[[:space:]]'
     });
   }
 }
-
-export const stunServer = new StunServer();
-
-export default mcpserver.metas("/stunServer")
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查远端 STUN 服务是否已经运行，不执行安装。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => ({ hasRemote: await stunServer.hasRemote() }),
-  })
-  .add({
-    protocol: "tool",
-    path: "/state",
-    description: "确保并读取 STUN 连接配置。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async () => stunServer.remoteIsRunning(),
-  })
-  .add({
-    protocol: "tool",
-    path: "/ensure",
-    description: "检查并确保远端 STUN 服务处于可用状态。",
-    schema: {},
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => {
-      await stunServer.remoteIsRunning();
-      return { ready: true };
-    },
-  });

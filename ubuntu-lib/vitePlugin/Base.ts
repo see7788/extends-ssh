@@ -3,52 +3,26 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Plugin } from "vite";
 import store from "../store/index.ts";
-import { nginx } from "../nginx/index.ts";
-import { peerjs } from "../peerjs/index.ts";
-import { pm2 } from "../pm2/index.ts";
-import { sftp } from "../sftp/index.ts";
-import { sshForward } from "../sshForward/index.ts";
-import { stunServer } from "../stunServer/index.ts";
-import type { PeerOptions } from "peerjs";
+import Peerjs from "../peerjs/index.ts";
+import Pm2 from "../pm2/index.ts";
+import Sftp from "../sftp/index.ts";
+import SshForward from "../sshForward/index.ts";
 
-type state_t = {
-  peerjs: {
-    state: Required<Pick<PeerOptions, "host" | "port" | "path" | "secure" | "key">> & {
-      readonly config: {
-        readonly iceServers: Array<{ readonly urls: string }>;
-      };
-    };
-    actions: {
-      peerjs: () => Promise<() => Promise<void>>;
-    };
-  };
-  sshForward: {
-    state: { readonly host: string };
-    actions: {
-      sshForward: () => Promise<() => Promise<void>>;
-    };
-  };
-  sftp: {
-    state: { readonly host: string };
-    actions: {
-      sftp: () => Promise<() => Promise<void>>;
-    };
-  };
-  pm2: {
-    state: { readonly host: string };
-    actions: {
-      pm2: () => Promise<() => Promise<void>>;
-    };
-  };
+type ProducerServices = {
+  peerjs: ReturnType<Peerjs["vite"]>;
+  sshForward: ReturnType<SshForward["vite"]>;
+  sftp: ReturnType<Sftp["vite"]>;
+  pm2: ReturnType<Pm2["vite"]>;
 };
+type ProducerState = Partial<ProducerServices> & { devPort: number };
 
-export default class <T extends Partial<state_t> & { devPort: number }> {
+export default class <T extends ProducerState> {
   constructor(public state: T) { }
 
   private get locPath() {
-    const c = store.getState().serverRoot[this.state.devPort]
+    const c = store.getState().vitePlugin[this.state.devPort]
     if (!c) {
-      throw Error("!store.getState().serverRoot[this.state.devPort]")
+      throw Error("!store.getState().vitePlugin[this.state.devPort]")
     }
     if (!statSync(c.packagePath, { throwIfNoEntry: false })) {
       throw Error("!statSync(c.packagePath, { throwIfNoEntry: false })")
@@ -57,8 +31,8 @@ export default class <T extends Partial<state_t> & { devPort: number }> {
   }
 
   serviceDefine(): {
-    [K in Exclude<keyof this["state"], "devPort"> as NonNullable<this["state"][K]> extends { state: unknown } ? K : never]:
-    NonNullable<this["state"][K]> extends { state: infer State } ? State : never;
+    [K in Exclude<keyof T, "devPort"> as NonNullable<T[K]> extends { state: unknown } ? K : never]:
+    NonNullable<T[K]> extends { state: infer State } ? State : never;
   } {
     return Object.fromEntries(
       Object.entries(this.state)
@@ -71,100 +45,43 @@ export default class <T extends Partial<state_t> & { devPort: number }> {
     ) as any;
   }
   peerjsAdd<Self extends this>(this: Self): Self & {
-    state: Self["state"] & Pick<state_t, "peerjs">;
+    state: Self["state"] & Pick<ProducerServices, "peerjs">;
   } {
-    const state = store.getState();
-    this.state.peerjs = {
-      state: {
-        host: state.ssh.host,
-        port: state.peerjs.listenPort,
-        path: state.peerjs.pathname,
-        secure: false,
-        key: state.peerjs.key,
-        config: {
-          iceServers: [{ urls: `stun:${state.ssh.host}:${state.stunServer.port}` }],
-        },
-      },
-      actions: {
-        peerjs: async () => {
-          await peerjs.remoteIsRunning();
-          await stunServer.remoteIsRunning();
-          return async () => { }
-        },
-      },
-    };
+    const peerjs = new Peerjs();
+    this.state.peerjs = peerjs.vite();
     return this as any;
   }
 
-
   sshForwardAdd<Self extends this>(this: Self): Self & {
-    state: Self["state"] & Pick<state_t, "sshForward">;
+    state: Self["state"] & Pick<ProducerServices, "sshForward">;
   } {
-    const state = store.getState();
-    this.state.sshForward = {
-      state: {
-        host: `${this.state.devPort}.${state.domain}`,
-      },
-      actions: {
-        sshForward: async () => {
-          const current = await sshForward.remoteIsRunning();
-          if (!current) throw new Error("SSH 转发服务未返回生命周期方法");
-          const forward = await current(this.state.devPort);
-          return async () => {
-            forward.close();
-          };
-        },
-      },
-    };
+    const sshForward = new SshForward();
+    this.state.sshForward = sshForward.vite(this.state.devPort);
     return this as any;
   }
 
   sftpAdd<Self extends this>(this: Self): Self & {
-    state: Self["state"] & Pick<state_t, "sftp">;
+    state: Self["state"] & Pick<ProducerServices, "sftp">;
   } {
-    const state = store.getState();
-    this.state.sftp = {
-      state: {
-        host: `${this.state.devPort}.${state.domain}`,
-      },
-      actions: {
-        sftp: async () => {
-          await sftp.makeRemote({ port: this.state.devPort, localPath: this.locPath })
-          return async () => { }
-        },
-      },
-    };
+    const sftp = new Sftp();
+    this.state.sftp = sftp.vite(this.state.devPort, this.locPath);
     return this as any;
   }
 
   pm2Add<Self extends this>(
     this: Self,
-    input: Omit<Parameters<typeof pm2.makeRemote>[0], "port" | "cwd">,
+    input: Omit<Parameters<Pm2["makeRemote"]>[0], "port" | "cwd">,
   ): Self & {
-    state: Self["state"] & Pick<state_t, "pm2">;
+    state: Self["state"] & Pick<ProducerServices, "pm2">;
   } {
-    const state = store.getState();
-    this.state.pm2 = {
-      state: {
-        host: `${this.state.devPort}.${state.domain}`,
-      },
-      actions: {
-        pm2: async () => {
-          const c = await pm2.makeRemote({
-            ...input,
-            cwd: sftp.remotePath(this.state.devPort),
-            port: this.state.devPort,
-          });
-          return async () => c.close()
-        },
-      },
-    };
+    const pm2 = new Pm2();
+    this.state.pm2 = pm2.vite(this.state.devPort, input);
     return this as any;
   }
 
-  producerPlugin<Self extends this, T extends Record<string, any> & { devPort?: never }>(
+  producerPlugin<Self extends this, TDefine extends Record<string, unknown> & { devPort?: never }>(
     this: Self,
-    producerDefine: T,
+    producerDefine: TDefine,
   ): Plugin {
     return {
       name: `producerPlugin${this.state.devPort}`,
@@ -176,7 +93,7 @@ export default class <T extends Partial<state_t> & { devPort: number }> {
       },
       configResolved: async ({ root }) => {
         store.setState(s => {
-          s.serverRoot[this.state.devPort] = {
+          s.vitePlugin[this.state.devPort] = {
             packagePath: root,
             define:producerDefine,
           };
@@ -193,10 +110,10 @@ export default class <T extends Partial<state_t> & { devPort: number }> {
           "utf8",
         );
       },
-      configureServer: () => this.state.sshForward?.actions.sshForward?.(),
+      configureServer: () => this.state.sshForward?.actions(),
       closeBundle: async () => {
-        await this.state.sftp?.actions.sftp?.();
-        await this.state.pm2?.actions.pm2?.();
+        await this.state.sftp?.actions();
+        await this.state.pm2?.actions();
       },
     }
   }

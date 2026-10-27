@@ -1,13 +1,6 @@
 ﻿import Base from "../public/index.ts";
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
-import mcpserver from "mcpserver";
-import { z } from "zod";
 import store from "../store/index.ts";
-
-const sshExecuteValidator = z.object({
-  command: z.string().trim().min(1),
-}).strict();
-const portValidator = z.object({ port: z.number().int().min(1).max(65_535) }).strict();
 
 type PortListener = {
   protocol: "tcp" | "udp";
@@ -21,17 +14,19 @@ type PortState = {
   occupied: boolean;
   listeners: PortListener[];
 };
-type Current = Pick<NodeSSH, "putDirectory" | "forwardIn">;
-
-class Ssh extends Base<Current> {
+export default class extends Base {
   private readonly client = new NodeSSH();
   private connectPromise?: Promise<void>;
-  protected async task(): Promise<Current> {
+  get host(): string {
+    return store.getState().ssh.host;
+  }
+  protected async setup(): Promise<void> {
+    await this.connectionReady();
+  }
+
+  private async connectionReady(): Promise<void> {
     if (this.client.isConnected()) {
-      return {
-        putDirectory: this.client.putDirectory.bind(this.client),
-        forwardIn: this.client.forwardIn.bind(this.client),
-      };
+      return;
     }
     if (!this.connectPromise) {
       this.connectPromise = this.client.connect(store.getState().ssh).then(() => undefined).finally(() => {
@@ -39,10 +34,6 @@ class Ssh extends Base<Current> {
       });
     }
     await this.connectPromise;
-    return {
-      putDirectory: this.client.putDirectory.bind(this.client),
-      forwardIn: this.client.forwardIn.bind(this.client),
-    };
   }
 
   async hasRemote(): Promise<boolean> {
@@ -54,8 +45,8 @@ class Ssh extends Base<Current> {
     return { host, port, username };
   }
 
-  async execute(command: z.infer<typeof sshExecuteValidator>["command"]): Promise<SSHExecCommandResponse> {
-    await this.remoteIsRunning();
+  async execute(command: string): Promise<SSHExecCommandResponse> {
+    await this.connectionReady();
     const execution = await this.client.execCommand(command);
     if (execution.code !== 0) {
       throw new Error(
@@ -63,6 +54,16 @@ class Ssh extends Base<Current> {
       );
     }
     return execution;
+  }
+
+  async putDirectory(...options: Parameters<NodeSSH["putDirectory"]>): Promise<Awaited<ReturnType<NodeSSH["putDirectory"]>>> {
+    await this.connectionReady();
+    return this.client.putDirectory(...options);
+  }
+
+  async forwardIn(...options: Parameters<NodeSSH["forwardIn"]>): Promise<Awaited<ReturnType<NodeSSH["forwardIn"]>>> {
+    await this.connectionReady();
+    return this.client.forwardIn(...options);
   }
 
   async hasPort(port: number): Promise<PortState> {
@@ -110,49 +111,3 @@ printf "%s\n%s" "$path" "$command"
     this.client.dispose();
   }
 }
-
-export const ssh = new Ssh();
-export default mcpserver.metas("/ssh")
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查当前 SSH 连接是否已经建立，不发起连接。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async () => ({ hasRemote: await ssh.hasRemote() }),
-  })
-  .add({
-    protocol: "tool",
-    path: "/config",
-    description: "读取 SSH 配置，仅返回主机、端口与用户名，绝不返回密码。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: input => ssh.config(),
-  })
-  .add({
-    protocol: "tool",
-    path: "/execute",
-    description: "通过已经建立的 SSH 连接执行指定命令并返回执行结果。",
-    schema: sshExecuteValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => await ssh.execute(input.command),
-  })
-  .add({
-    protocol: "tool",
-    path: "/hasPort",
-    description: "查询远端端口是否被占用，并返回监听进程和项目路径。",
-    schema: portValidator.shape,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => ssh.hasPort(input.port),
-  })
-  .add({
-    protocol: "tool",
-    path: "/dispose",
-    description: "关闭并释放当前 SSH 连接。",
-    schema: {},
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: input => {
-      ssh.dispose();
-      return { disposed: true };
-    },
-  });

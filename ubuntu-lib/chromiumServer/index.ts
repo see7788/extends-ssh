@@ -1,10 +1,9 @@
 ﻿import Base from "../public/index.ts";
-import mcpserver from "mcpserver";
-import { apt } from "../apt/index.ts";
-import { z } from "zod";
-import { ssh } from "../ssh/index.ts";
+import Apt from "../apt/index.ts";
+import { targetUrlValidator } from "./zod.ts";
+import Ssh from "../ssh/index.ts";
 
-const browserConfig = {
+export const browserConfig = {
   publicPort: 10_003,
   display: ":1",
   sessionService: "cloud-kasm-chromium.service",
@@ -18,7 +17,7 @@ const browserConfig = {
   allowResize: true,
 } as const;
 
-type Current = {
+type ChromiumEndpoint = {
   readonly host: string;
   readonly port: typeof browserConfig.publicPort;
   readonly secure: false;
@@ -26,15 +25,11 @@ type Current = {
   readonly accessUrl: string;
 };
 
-const targetUrlValidator = z.string().trim().url().refine(value => {
-  const protocol = new URL(value).protocol;
-  return protocol === "http:" || protocol === "https:";
-}, "目标地址必须使用 http 或 https");
-const targetInputValidator = z.object({ url: targetUrlValidator }).strict();
-
-class ChromiumServerKasm extends Base<(url?: string) => Promise<Current>> {
-  protected async task(): Promise<(url?: string) => Promise<Current>> {
-    await apt.remoteIsRunning();
+export default class extends Base {
+  protected async setup(): Promise<void> {
+    const apt = new Apt();
+    const ssh = new Ssh();
+    await apt.setupReady();
       await ssh.execute(`
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -147,11 +142,12 @@ systemctl daemon-reload
 systemctl enable ${browserConfig.sessionService} >/dev/null
 systemctl restart ${browserConfig.sessionService}
 `);
-    return this.ensureCurrent.bind(this);
   }
 
-  private async ensureCurrent(url?: string): Promise<Current> {
+  async ensure(url?: string): Promise<ChromiumEndpoint> {
+    await this.setupReady();
     if (url !== undefined) await this.setTarget(url);
+    const ssh = new Ssh();
     const { host } = await ssh.config();
     const target = await this.getTarget();
     return {
@@ -164,13 +160,15 @@ systemctl restart ${browserConfig.sessionService}
   }
 
   async hasRemote(): Promise<boolean> {
+    const ssh = new Ssh();
     const result = await ssh.execute(`if systemctl is-active --quiet ${browserConfig.sessionService} && ss -ltnH | awk '$4 ~ /(^|:)${browserConfig.publicPort}$/ { found=1 } END { exit !found }'; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
 
-  async setTarget(url: string): Promise<Current> {
+  async setTarget(url: string): Promise<ChromiumEndpoint> {
     const target = targetUrlValidator.parse(url);
-    await this.remoteIsRunning();
+    await this.setupReady();
+    const ssh = new Ssh();
     const encoded = Buffer.from(target, "utf8").toString("base64");
     await ssh.execute(`
 set -e
@@ -190,6 +188,7 @@ systemctl restart ${browserConfig.sessionService}
   }
 
   private async getTarget(): Promise<string> {
+    const ssh = new Ssh();
     const result = await ssh.execute(`cat ${browserConfig.targetFile} 2>/dev/null || printf ''`);
     return result.stdout.trim();
   }
@@ -198,31 +197,3 @@ systemctl restart ${browserConfig.sessionService}
     return `'${value.replace(/'/g, `\'"'"'`)}'`;
   }
 }
-
-export const chromiumServerKasm = new ChromiumServerKasm();
-
-export default mcpserver.metas("/chromiumServerKasm")
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查 Ubuntu 云服务器上的 KasmVNC Chromium 服务是否运行。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => ({ hasRemote: await chromiumServerKasm.hasRemote() }),
-  })
-  .add({
-    protocol: "tool",
-    path: "/ensure",
-    description: "安装并启动 Ubuntu 原生 Chromium 与 KasmVNC 网页桌面，默认目标为 GitHub。",
-    schema: targetInputValidator.partial().shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => { const current = await chromiumServerKasm.remoteIsRunning(); if (!current) throw new Error("Chromium service did not provide a lifecycle method"); return current(input.url ?? browserConfig.targetDefault); },
-  })
-  .add({
-    protocol: "tool",
-    path: "/open",
-      description: `动态设置云服务器 Chromium 要打开的目标站点。KasmVNC 网页入口保持在 ${browserConfig.publicPort} 端口。`,
-    schema: targetInputValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => chromiumServerKasm.setTarget(input.url),
-  });

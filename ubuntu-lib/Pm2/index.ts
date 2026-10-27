@@ -1,22 +1,9 @@
 ﻿import Base from "../public/index.ts";
-import mcpserver from "mcpserver";
-import { z } from "zod";
+import Nodejs from "../nodejs/index.ts";
+import Sftp from "../sftp/index.ts";
+import Ssh from "../ssh/index.ts";
 
-import { nodejs } from "../nodejs/index.ts";
-import { ssh } from "../ssh/index.ts";
-
-const devPortValidator = z.number().int().min(1).max(65_535);
-const cwdValidator = z.string().trim().min(1).refine(value => value.startsWith("/") && !value.includes("\0") && !value.includes("\\"), "cwd 必须是 Linux 绝对路径");
-
-const portValidator = devPortValidator;
-const processValidator = z.object({
-  port: portValidator,
-  cwd: cwdValidator,
-  command: z.string().trim().min(1),
-  environment: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string()).optional(),
-}).strict();
-const inputValidator = z.object({ port: devPortValidator }).strict();
-type Current = {
+type Pm2Process = {
   readonly name: string;
   hasRemote(): Promise<boolean>;
   refresh(): Promise<"missing" | "stopped" | "running">;
@@ -25,13 +12,32 @@ type Current = {
   close(): Promise<void>;
 };
 
-class Pm2 extends Base<(port: number) => Promise<Current>> {
-  protected async task(): Promise<(port: number) => Promise<Current>> {
-    await nodejs.remoteIsRunning();
-    await ssh.execute("set -e; if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi; pm2 ping >/dev/null; pm2 save --force >/dev/null");
-    return this.getRemote.bind(this);
+export default class extends Base {
+  vite(
+    port: number,
+    input: Omit<Parameters<this["makeRemote"]>[0], "port" | "cwd">,
+  ) {
+    return {
+      state: { host: `${port}.${this.domain}` },
+      actions: async () => {
+        const sftp = new Sftp();
+        const process = await this.makeRemote({
+          ...input,
+          cwd: sftp.remotePath(port),
+          port,
+        });
+        return () => process.close();
+      },
+    };
   }
-  private async getRemote(port: number): Promise<Current> {
+  protected async setup(): Promise<void> {
+    const nodejs = new Nodejs();
+    const ssh = new Ssh();
+    await nodejs.setupReady();
+    await ssh.execute("set -e; if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi; pm2 ping >/dev/null; pm2 save --force >/dev/null");
+  }
+  async getRemote(port: number): Promise<Pm2Process> {
+    await this.setupReady();
     if (!await this.hasRemote(port)) {
       throw new Error(`开发端口尚未分配 PM2 进程: ${port}`);
     }
@@ -44,8 +50,14 @@ class Pm2 extends Base<(port: number) => Promise<Current>> {
       close: () => this.closeRemote(port),
     };
   };
-  async makeRemote(input: z.infer<typeof processValidator>): Promise<Current> {
-    await this.remoteIsRunning();
+  async makeRemote(input: {
+    port: number;
+    cwd: string;
+    command: string;
+    environment?: Record<string, string>;
+  }): Promise<Pm2Process> {
+    await this.setupReady();
+    const ssh = new Ssh();
     const current = await this.refresh(input.port);
     if (current !== "running" && await this.remotePortIsListening(input.port)) {
       throw new Error(`开发端口已被其他远程服务占用: ${input.port}`);
@@ -67,7 +79,8 @@ pm2 save --force >/dev/null`);
     };
   }
   async refresh(port: number): Promise<"missing" | "stopped" | "running"> {
-    await this.remoteIsRunning();
+    await this.setupReady();
+    const ssh = new Ssh();
     const result = await ssh.execute("pm2 jlist");
     const list: unknown = JSON.parse(result.stdout);
     if (!Array.isArray(list)) throw new Error("PM2 未返回进程数组");
@@ -76,39 +89,32 @@ pm2 save --force >/dev/null`);
     return status === "online" ? "running" : item ? "stopped" : "missing";
   }
   async hasRemote(port: number): Promise<boolean> {
+    const ssh = new Ssh();
     const result = await ssh.execute(`if command -v pm2 >/dev/null 2>&1 && pm2 describe ${this.shell(String(port))} >/dev/null 2>&1; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
   async stop(port: number): Promise<void> {
-    await this.remoteIsRunning();
+    await this.setupReady();
+    const ssh = new Ssh();
     const name = this.shell(String(port));
     await ssh.execute(`pm2 stop ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   async restart(port: number): Promise<void> {
-    await this.remoteIsRunning();
+    await this.setupReady();
+    const ssh = new Ssh();
     const name = this.shell(String(port));
     await ssh.execute(`pm2 restart ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   async closeRemote(port: number): Promise<void> {
-    await this.remoteIsRunning();
+    await this.setupReady();
+    const ssh = new Ssh();
     const name = this.shell(String(port));
     await ssh.execute(`pm2 delete ${name} >/dev/null 2>&1 || true; pm2 save --force >/dev/null`);
   }
   private async remotePortIsListening(port: number): Promise<boolean> {
+    const ssh = new Ssh();
     const result = await ssh.execute(`ss -ltnH | awk '$4 ~ /(^|:)${port}$/ { found=1 } END { print found ? "true" : "false" }'`);
     return result.stdout.trim() === "true";
   }
   private shell(value: string): string { return "'" + value.replace(/'/g, "'\"'\"'") + "'"; }
 }
-
-export const pm2 = new Pm2();
-const server = mcpserver.metas("/pm2");
-server.add({ protocol: "tool", path: "/makeRemote", description: "按开发端口、工作目录和命令创建远端 PM2 进程。", schema: processValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const remote = await pm2.makeRemote(input); return { name: remote.name }; } });
-server.add({ protocol: "tool", path: "/hasRemote", description: "检查端口对应的 PM2 进程是否已存在。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => ({ hasRemote: await pm2.hasRemote(input.port) }) });
-server.add({ protocol: "tool", path: "/getRemote", description: "检查并读取端口对应的 PM2 进程标识。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { const current = await pm2.remoteIsRunning(); if (!current) throw new Error("PM2 服务未返回生命周期方法"); const remote = await current(input.port); return { name: remote.name }; } });
-server.add({ protocol: "tool", path: "/refresh", description: "刷新端口对应的 PM2 进程状态。", schema: inputValidator.shape, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: input => pm2.refresh(input.port) });
-server.add({ protocol: "tool", path: "/stop", description: "停止端口对应的 PM2 进程。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await pm2.stop(input.port); return { stopped: true }; } });
-server.add({ protocol: "tool", path: "/restart", description: "重启端口对应的 PM2 进程。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await pm2.restart(input.port); return { restarted: true }; } });
-server.add({ protocol: "tool", path: "/closeRemote", description: "关闭端口对应的 PM2 进程。", schema: inputValidator.shape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: async input => { await pm2.closeRemote(input.port); return { closed: true }; } });
-
-export default server;

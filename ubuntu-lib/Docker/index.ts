@@ -1,13 +1,9 @@
 ﻿import Base from "../public/index.ts";
-import mcpserver from "mcpserver";
-import { ssh } from "../ssh/index.ts";
+import Ssh from "../ssh/index.ts";
 
-type Current = {
-  hasRemote(): Promise<boolean>;
-};
-
-class Docker extends Base<Current> {
-  protected async task(): Promise<Current> {
+export default class extends Base {
+  protected async setup(): Promise<void> {
+    const ssh = new Ssh();
     await ssh.execute(`
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -19,33 +15,11 @@ systemctl enable docker --now >/dev/null
 systemctl is-active --quiet docker
 docker info >/dev/null
 `);
-    return this;
   }
 
   async hasRemote(): Promise<boolean> {
+    const ssh = new Ssh();
     const result = await ssh.execute("if command -v docker >/dev/null 2>&1 && systemctl is-active --quiet docker && docker info >/dev/null 2>&1; then printf true; else printf false; fi");
     return result.stdout.trim() === "true";
   }
 }
-
-export const docker = new Docker();
-
-export default mcpserver.metas("/docker").add({
-  protocol: "tool",
-  path: "/ensure",
-  description: "检查远端 Docker，缺少时完成安装并验证可用性。",
-  schema: {},
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  handler: async () => {
-    await docker.remoteIsRunning();
-    return { ready: true };
-  },
-})
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查远端 Docker 是否已经运行，不执行安装。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => ({ hasRemote: await docker.hasRemote() }),
-  });

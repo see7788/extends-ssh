@@ -1,17 +1,17 @@
 ﻿import mcpserver from "mcpserver";
-import aptSlice from "./apt/index.ts";
-import dockerSlice from "./docker/index.ts";
-import chromiumServerKasmSlice from "./chromiumServer/index.ts";
-import certificateSlice from "./certificate/index.ts";
-import sshForwardSlice from "./sshForward/index.ts";
-import nginxSlice from "./nginx/index.ts";
-import nodejsSlice from "./nodejs/index.ts";
-import peerjsSlice from "./peerjs/index.ts";
-import pm2Slice from "./pm2/index.ts";
-import sftpSlice from "./sftp/index.ts";
-import sshSlice from "./ssh/index.ts";
-import stunServerSlice from "./stunServer/index.ts";
-import vpnServerSlice from "./vpnServer/index.ts";
+import aptSlice from "./apt/mcpserver.ts";
+import dockerSlice from "./docker/mcpserver.ts";
+import chromiumServerKasmSlice from "./chromiumServer/mcpserver.ts";
+import certificateSlice from "./certificate/mcpserver.ts";
+import sshForwardSlice from "./sshForward/mcpserver.ts";
+import nginxSlice from "./nginx/mcpserver.ts";
+import nodejsSlice from "./nodejs/mcpserver.ts";
+import peerjsSlice from "./peerjs/mcpserver.ts";
+import pm2Slice from "./pm2/mcpserver.ts";
+import sftpSlice from "./sftp/mcpserver.ts";
+import sshSlice from "./ssh/mcpserver.ts";
+import stunServerSlice from "./stunServer/mcpserver.ts";
+import vpnServerSlice from "./vpnServer/mcpserver.ts";
 
 export default mcpserver.metas("/")
   .baseAdd(aptSlice)

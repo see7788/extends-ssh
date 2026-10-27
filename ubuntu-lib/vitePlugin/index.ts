@@ -3,8 +3,8 @@ import path from "node:path";
 import type { Plugin } from "vite";
 import Base from "./Base.ts";
 import store from "../store/index.ts";
-class Index {
-  consumerPlugin<T extends Record<string, any> & { devPort?: never }>(
+export default class {
+  consumerPlugin<T extends Record<string, unknown> & { devPort?: never }>(
     producerDevPort: number,
     consumerDefine: T = {} as T,
   ): Plugin {
@@ -16,7 +16,7 @@ class Index {
         await writeFile(
           path.join(declareDirectory, `default.ts`),
           `export default ${JSON.stringify(
-            { ...consumerDefine, ...store.getState().serverRoot[producerDevPort].define },
+            { ...consumerDefine, ...store.getState().vitePlugin[producerDevPort].define },
             null,
             2,
           )} as const;`,
@@ -36,5 +36,3 @@ class Index {
     return new Base({ devPort: 3005 }).peerjsAdd().producerPlugin({})
   }
 }
-
-export default new Index

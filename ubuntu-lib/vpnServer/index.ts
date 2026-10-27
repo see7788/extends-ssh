@@ -1,7 +1,6 @@
 ﻿import Base from "../public/index.ts";
-import mcpserver from "mcpserver";
-import { z } from "zod";
-import { ssh } from "../ssh/index.ts";
+import { subscriptionUrlValidator } from "./zod.ts";
+import Ssh from "../ssh/index.ts";
 
 const vpnConfig = {
   service: "cloud-mihomo.service",
@@ -39,14 +38,7 @@ const vpnConfig = {
   },
 } as const;
 
-const subscriptionUrlValidator = z.string().trim().url().refine(value => {
-  const protocol = new URL(value).protocol;
-  return protocol === "http:" || protocol === "https:";
-}, "订阅地址必须使用 http 或 https");
-const ensureInputValidator = z.object({ url: subscriptionUrlValidator.optional() }).strict();
-const configureInputValidator = z.object({ url: subscriptionUrlValidator }).strict();
-
-type Current = {
+type VpnStatus = {
   readonly host: string;
   readonly service: string;
   readonly configured: boolean;
@@ -56,8 +48,9 @@ type Current = {
   readonly tun: boolean;
 };
 
-class VpnServer extends Base<(url?: string) => Promise<Current>> {
-  protected async task(): Promise<(url?: string) => Promise<Current>> {
+export default class extends Base {
+  protected async setup(): Promise<void> {
+    const ssh = new Ssh();
     await ssh.execute(`
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -114,16 +107,17 @@ if [ -s ${vpnConfig.configFile} ]; then
   systemctl restart ${vpnConfig.service}
 fi
 `);
-    return this.ensureCurrent.bind(this);
   }
 
-  private async ensureCurrent(url?: string): Promise<Current> {
+  async ensure(url?: string): Promise<VpnStatus> {
+    await this.setupReady();
     const subscriptionUrl = url ?? vpnConfig.subscription.url;
     if (subscriptionUrl) await this.configure(subscriptionUrl);
     return this.status();
   };
 
   async hasRemote(): Promise<boolean> {
+    const ssh = new Ssh();
     const result = await ssh.execute(`
 if [ -x ${vpnConfig.binary} ] && [ -s ${vpnConfig.configFile} ] && systemctl is-active --quiet ${vpnConfig.service} && ip link show ${vpnConfig.tunName} >/dev/null 2>&1; then
   printf true
@@ -136,7 +130,8 @@ fi
 
   async configure(url: string): Promise<void> {
     const subscriptionUrl = subscriptionUrlValidator.parse(url);
-    await this.remoteIsRunning();
+    await this.setupReady();
+    const ssh = new Ssh();
     await ssh.execute(`
 set -e
 subscription_response=$(mktemp)
@@ -209,7 +204,8 @@ systemctl is-active --quiet ${vpnConfig.service}
 `);
   }
 
-  async status(): Promise<Current> {
+  async status(): Promise<VpnStatus> {
+    const ssh = new Ssh();
     const result = await ssh.execute(`
 configured=false
 running=false
@@ -236,46 +232,3 @@ printf '%s %s %s' "$configured" "$running" "$tun"
     return `'${value.replace(/'/g, `\'"'"'`)}'`;
   }
 }
-
-export const vpnServer = new VpnServer();
-
-export default mcpserver.metas("/vpnServer")
-  .add({
-    protocol: "tool",
-    path: "/ensure",
-    description: "在 Ubuntu 云服务器安装并启动 Mihomo；未传 url 时使用文件顶部 vpnConfig.subscription.url，传入 url 时使用本次地址；vpnConfig.proxySelection 可指定代理组和节点。",
-    schema: ensureInputValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      const current = await vpnServer.remoteIsRunning();
-      if (!current) throw new Error("Mihomo 服务未返回生命周期方法");
-      return current(input.url);
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/configure",
-    description: "把完整 Clash/Mihomo 订阅地址写入 Ubuntu 云服务器并重建 Mihomo 配置；订阅地址不会在结果中回显。",
-    schema: configureInputValidator.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => {
-      await vpnServer.configure(input.url);
-      return vpnServer.status();
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/status",
-    description: "读取 Ubuntu Mihomo 服务状态、TUN 状态和本机代理端口。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async () => vpnServer.status(),
-  })
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查 Ubuntu Mihomo 服务是否已运行并创建 TUN 网卡。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async () => ({ hasRemote: await vpnServer.hasRemote() }),
-  });

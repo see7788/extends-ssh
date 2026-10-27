@@ -1,13 +1,9 @@
 ﻿import Base from "../public/index.ts";
-import mcpserver from "mcpserver";
-import { ssh } from "../ssh/index.ts";
+import Ssh from "../ssh/index.ts";
 
-type Current = {
-  hasRemote(): Promise<boolean>;
-};
-
-class Apt extends Base<Current> {
-  protected async task(): Promise<Current> {
+export default class extends Base {
+  protected async setup(): Promise<void> {
+    const ssh = new Ssh();
     await ssh.execute(`
 set -e
 command -v apt-get >/dev/null 2>&1
@@ -25,10 +21,10 @@ for COMMAND in lsof netstat unzip wget ufw sudo curl git gpg lsb_release xz ss; 
   command -v "$COMMAND" >/dev/null
 done
 `);
-    return this;
   }
 
   async hasRemote(): Promise<boolean> {
+    const ssh = new Ssh();
     const result = await ssh.execute(`
 if ! command -v apt-get >/dev/null 2>&1 || ! command -v dpkg >/dev/null 2>&1; then
   printf false
@@ -44,25 +40,3 @@ printf true`);
     return result.stdout.trim() === "true";
   }
 }
-
-export const apt = new Apt();
-
-export default mcpserver.metas("/apt").add({
-  protocol: "tool",
-  path: "/ensure",
-  description: "检查并补齐远端系统所需的 Apt 基础组件。",
-  schema: {},
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  handler: async () => {
-    await apt.remoteIsRunning();
-    return { ready: true };
-  },
-})
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查远端 Apt 基础组件是否已经就绪，不执行安装。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => ({ hasRemote: await apt.hasRemote() }),
-  });

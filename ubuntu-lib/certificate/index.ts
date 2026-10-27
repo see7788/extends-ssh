@@ -1,29 +1,26 @@
 ﻿import Base from "../public/index.ts";
-import mcpserver from "mcpserver";
-import { z } from "zod";
-import { ssh } from "../ssh/index.ts";
+import { hostnameValidator } from "./zod.ts";
+import Ssh from "../ssh/index.ts";
 import store from "../store/index.ts";
 
-const hostnameValidator = z.string().trim().toLowerCase()
-  .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i);
-const inputValidator = z.object({ hostname: hostnameValidator }).strict();
-
-type Current = {
+type CertificateFiles = {
   readonly certPath: string;
   readonly keyPath: string;
 };
 
-class Certificate extends Base<(hostname: string) => Promise<Current>> {
-  protected async task(): Promise<(hostname: string) => Promise<Current>> {
+export default class extends Base {
+  protected async setup(): Promise<void> {
+    const ssh = new Ssh();
     await ssh.execute(`set -e
 if ! command -v openssl >/dev/null 2>&1; then
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openssl >/dev/null
 fi
 openssl version >/dev/null`);
-    return this.makeRemote.bind(this);
   }
-  async makeRemote(hostname: string): Promise<Current> {
+  async makeRemote(hostname: string): Promise<CertificateFiles> {
+    await this.setupReady();
+    const ssh = new Ssh();
     const base = `${store.getState().certificate.root}/${hostname}`;
     const certPath = `${base}/fullchain.pem`;
     const keyPath = `${base}/privkey.pem`;
@@ -41,6 +38,7 @@ fi`);
   }
 
   async hasRemote(hostname: string): Promise<boolean> {
+    const ssh = new Ssh();
     const value = hostnameValidator.parse(hostname);
     const base = `${store.getState().certificate.root}/${value}`;
     const certPath = `${base}/fullchain.pem`;
@@ -52,26 +50,3 @@ fi`);
     return result.stdout.trim() === "true";
   }
 }
-
-export const certificate = new Certificate();
-
-export default mcpserver.metas("/certificate").add({
-  protocol: "tool",
-  path: "/ensure",
-  description: "为指定域名生成并确保可用的自签名 TLS 证书。",
-  schema: inputValidator.shape,
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  handler: async input => {
-    const current = await certificate.remoteIsRunning();
-    if (!current) throw new Error("证书服务未返回生命周期方法");
-    return current(input.hostname);
-  },
-})
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查指定域名的远端证书是否有效，不执行安装或生成。",
-    schema: inputValidator.shape,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => ({ hasRemote: await certificate.hasRemote(input.hostname) }),
-  });
