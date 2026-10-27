@@ -23,20 +23,5 @@ done
 `);
   }
 
-  async hasRemote(): Promise<boolean> {
-    const ssh = new Ssh();
-    const result = await ssh.execute(`
-if ! command -v apt-get >/dev/null 2>&1 || ! command -v dpkg >/dev/null 2>&1; then
-  printf false
-  exit 0
-fi
-for PACKAGE in lsof net-tools unzip wget ufw sudo curl git ca-certificates gnupg lsb-release xz-utils iproute2; do
-  if ! dpkg -s "$PACKAGE" >/dev/null 2>&1; then printf false; exit 0; fi
-done
-for COMMAND in lsof netstat unzip wget ufw sudo curl git gpg lsb_release xz ss; do
-  if ! command -v "$COMMAND" >/dev/null 2>&1; then printf false; exit 0; fi
-done
-printf true`);
-    return result.stdout.trim() === "true";
-  }
+
 }

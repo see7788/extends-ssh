@@ -14,11 +14,3 @@ export default mcpserver.metas("/nodejs").add({
     return { ready: true };
   },
 })
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查远端 Node.js 运行环境是否已经存在，不执行安装。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => ({ hasRemote: await nodejs.hasRemote() }),
-  });

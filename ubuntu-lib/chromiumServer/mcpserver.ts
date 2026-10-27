@@ -1,31 +1,47 @@
 ﻿import mcpserver from "mcpserver";
-import ChromiumServerKasm, { browserConfig } from "./index.ts";
-import { targetInputValidator } from "./zod.ts";
+import ChromiumServer from "./index.ts";
+import { indexInputValidator } from "./zod.ts";
 
-const chromiumServerKasm = new ChromiumServerKasm();
+const chromiumServer = new ChromiumServer();
 
-export default mcpserver.metas("/chromiumServerKasm")
+export default mcpserver.metas("/chromiumServer")
   .add({
     protocol: "tool",
-    path: "/hasRemote",
-    description: "检查 Ubuntu 云服务器上的 KasmVNC Chromium 服务是否运行。",
+    path: "/setup",
+    description: "Ensure one Chromium instance is running.",
     schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => ({ hasRemote: await chromiumServerKasm.hasRemote() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async () => { await chromiumServer.setup(); return { ready: true }; },
   })
   .add({
     protocol: "tool",
-    path: "/ensure",
-    description: "安装并启动 Ubuntu 原生 Chromium 与 KasmVNC 网页桌面，默认目标为 GitHub。",
-    schema: targetInputValidator.partial().shape,
+    path: "/set",
+    description: "Apply the stored configuration for one Chromium instance.",
+    schema: indexInputValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => chromiumServerKasm.ensure(input.url ?? browserConfig.targetDefault),
+    handler: async input => { await chromiumServer.set(input.index); return { updated: true }; },
   })
   .add({
     protocol: "tool",
-    path: "/open",
-      description: `动态设置云服务器 Chromium 要打开的目标站点。KasmVNC 网页入口保持在 ${browserConfig.publicPort} 端口。`,
-    schema: targetInputValidator.shape,
+    path: "/add",
+    description: "Start one Chromium instance using its stored configuration.",
+    schema: indexInputValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => chromiumServerKasm.setTarget(input.url),
+    handler: async input => { await chromiumServer.add(input.index); return { added: true }; },
+  })
+  .add({
+    protocol: "tool",
+    path: "/stop",
+    description: "Stop one Chromium instance without deleting its configuration.",
+    schema: indexInputValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: async input => { await chromiumServer.stop(input.index); return { stopped: true }; },
+  })
+  .add({
+    protocol: "tool",
+    path: "/del",
+    description: "Remove one Chromium instance and its remote service.",
+    schema: indexInputValidator.shape,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    handler: async input => { await chromiumServer.del(input.index); return { deleted: true }; },
   });

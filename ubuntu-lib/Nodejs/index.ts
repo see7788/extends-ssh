@@ -28,12 +28,5 @@ for command in node npm npx corepack; do ln -sfn ${ssh.quoteShellArg(`${root}/bi
 node --version`);
   }
 
-  async hasRemote(): Promise<boolean> {
-    const ssh = new Ssh();
-    const { root } = store.getState().nodejs;
-    const result = await ssh.execute(`if [ -x ${ssh.quoteShellArg(`${root}/bin/node`)} ] \
-  && [ -x ${ssh.quoteShellArg(`${root}/bin/npm`)} ] \
-  && [ -x ${ssh.quoteShellArg(`${root}/bin/npx`)} ]; then printf true; else printf false; fi`);
-    return result.stdout.trim() === "true";
-  }
+
 }

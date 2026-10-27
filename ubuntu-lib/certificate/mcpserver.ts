@@ -14,11 +14,3 @@ export default mcpserver.metas("/certificate").add({
     return certificate.makeRemote(input.hostname);
   },
 })
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查指定域名的远端证书是否有效，不执行安装或生成。",
-    schema: inputValidator.shape,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => ({ hasRemote: await certificate.hasRemote(input.hostname) }),
-  });

@@ -14,6 +14,8 @@ import nodejsStore from "../nodejs/store.ts";
 import certificateStore from "../certificate/store.ts";
 import viteStore from "../vite/store.ts";
 import postsStore from "../posts/store.ts";
+import vpnServerStore from "../vpnServer/store.ts";
+import chromiumServerStore from "../chromiumServer/store.ts";
 import pkg from "../package.json";
 import type { Store } from "./type.ts";
 
@@ -34,6 +36,8 @@ const store = createStore<Store>()(
       ...certificateStore(...s),
       ...viteStore(...s),
       ...postsStore(...s),
+      ...vpnServerStore(...s),
+      ...chromiumServerStore(...s),
     })),
   }),
 );

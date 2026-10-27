@@ -8,6 +8,8 @@ import type nginxStore from "../nginx/store.ts";
 import type nodejsStore from "../nodejs/store.ts";
 import type viteStore from "../vite/store.ts"
 import type postsStore from "../posts/store.ts";
+import type vpnServerStore from "../vpnServer/store.ts";
+import type chromiumServerStore from "../chromiumServer/store.ts";
 export type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof certificateStore>
   & ReturnType<typeof peerjsStore>
@@ -18,3 +20,5 @@ export type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof nodejsStore>
   & ReturnType<typeof viteStore>
   & ReturnType<typeof postsStore>
+  & ReturnType<typeof vpnServerStore>
+  & ReturnType<typeof chromiumServerStore>

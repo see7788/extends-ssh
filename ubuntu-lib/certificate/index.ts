@@ -36,15 +36,5 @@ fi`);
     return { certPath, keyPath };
   }
 
-  async hasRemote(hostname: string): Promise<boolean> {
-    const ssh = new Ssh();
-    const value = hostnameValidator.parse(hostname);
-    const base = `${store.getState().certificate.root}/${value}`;
-    const certPath = `${base}/fullchain.pem`;
-    const keyPath = `${base}/privkey.pem`;
-    const result = await ssh.execute(`if [ -s ${ssh.quoteShellArg(certPath)} ] \
-  && [ -s ${ssh.quoteShellArg(keyPath)} ] \
-  && openssl x509 -checkend 2592000 -noout -in ${ssh.quoteShellArg(certPath)} >/dev/null 2>&1; then printf true; else printf false; fi`);
-    return result.stdout.trim() === "true";
-  }
+
 }

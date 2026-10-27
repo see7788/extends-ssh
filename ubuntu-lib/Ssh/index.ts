@@ -36,10 +36,6 @@ export default class extends Base {
     await this.connectPromise;
   }
 
-  async hasRemote(): Promise<boolean> {
-    return this.client.isConnected();
-  }
-
   async config(): Promise<Readonly<{ host: string; port: number; username: string }>> {
     const { host, port, username } = store.getState().ssh;
     return { host, port, username };

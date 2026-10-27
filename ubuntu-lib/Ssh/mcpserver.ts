@@ -7,14 +7,6 @@ const ssh = new Ssh();
 export default mcpserver.metas("/ssh")
   .add({
     protocol: "tool",
-    path: "/hasRemote",
-    description: "检查当前 SSH 连接是否已经建立，不发起连接。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: async () => ({ hasRemote: await ssh.hasRemote() }),
-  })
-  .add({
-    protocol: "tool",
     path: "/config",
     description: "读取 SSH 配置，仅返回主机、端口与用户名，绝不返回密码。",
     schema: {},

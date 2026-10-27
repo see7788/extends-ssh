@@ -1,36 +1,41 @@
 ﻿import Base from "../public/index.ts";
 import Apt from "../apt/index.ts";
-import { targetUrlValidator } from "./zod.ts";
 import Ssh from "../ssh/index.ts";
-
-export const browserConfig = {
-  publicPort: 10_003,
-  display: ":1",
-  sessionService: "cloud-kasm-chromium.service",
-  targetFile: "/etc/cloud-browser/target-url",
-  targetDefault: "https://github.com/",
-  user: "chromium-browser",
-  home: "/home/chromium-browser",
-  chromiumDataDir: "/home/chromium-browser/kasm-chromium-data",
-  chromiumBinary: "/snap/chromium/current/usr/lib/chromium-browser/chrome",
-  resolution: { width: 1_440, height: 900 },
-  allowResize: true,
-} as const;
-
-type ChromiumEndpoint = {
-  readonly host: string;
-  readonly port: typeof browserConfig.publicPort;
-  readonly secure: false;
-  readonly url: string;
-  readonly accessUrl: string;
-};
+import store from "../store/index.ts";
 
 export default class extends Base {
-  protected async setup(): Promise<void> {
+  async setup(index = 0): Promise<void> {
+    const config = store.getState().chromiumServer[index];
+    if (!config) throw new Error(`Chromium instance does not exist: ${index}`);
+    const sessionService = `cloud-kasm-chromium-${index}.service`;
+    const ssh = new Ssh();
+    await ssh.execute(`
+set -e
+systemctl enable ${ssh.quoteShellArg(sessionService)} >/dev/null
+systemctl start ${ssh.quoteShellArg(sessionService)}
+`);
+  }
+
+  async set(index: number): Promise<void> {
+    const state = store.getState();
+    const config = state.chromiumServer[index];
+    if (!config) throw new Error(`Chromium instance does not exist: ${index}`);
+    const sessionService = `cloud-kasm-chromium-${index}.service`;
+    const user = `chromium-browser-${index}`;
+    const home = `/home/${user}`;
+    const targetFile = `/etc/cloud-browser/${index}/target-url`;
+    const chromiumDataDir = `${home}/kasm-chromium-data`;
+    const chromiumBinary = "/snap/chromium/current/usr/lib/chromium-browser/chrome";
+    const ports = new Set<number>();
+    for (const config of state.chromiumServer) {
+      if (!config) continue;
+      if (ports.has(config.kasmVnc.port)) throw new Error(`Chromium port is duplicated: ${config.kasmVnc.port}`);
+      ports.add(config.kasmVnc.port);
+    }
     const apt = new Apt();
     const ssh = new Ssh();
     await apt.setupReady();
-      await ssh.execute(`
+    await ssh.execute(`
 set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -41,156 +46,138 @@ for attempt in $(seq 1 30); do
   sleep 1
 done
 if ! snap list chromium >/dev/null 2>&1; then snap install chromium >/dev/null; fi
-if ! id -u ${browserConfig.user} >/dev/null 2>&1; then useradd --create-home --shell /bin/bash ${browserConfig.user}; fi
-mkdir -p /etc/cloud-browser ${browserConfig.home}/.vnc
-chown -R ${browserConfig.user}:${browserConfig.user} /etc/cloud-browser ${browserConfig.home}/.vnc
-if [ ! -s ${browserConfig.targetFile} ]; then
-  printf %s ${ssh.quoteShellArg(Buffer.from(browserConfig.targetDefault, "utf8").toString("base64"))} | base64 -d > ${browserConfig.targetFile}
-fi
-chown ${browserConfig.user}:${browserConfig.user} ${browserConfig.targetFile}
-chmod 644 ${browserConfig.targetFile}
-if ! command -v vncserver >/dev/null 2>&1; then
-  codename=$( . /etc/os-release; printf %s "$VERSION_CODENAME" )
-  arch=$(dpkg --print-architecture)
-  asset=$(python3 - "$codename" "$arch" <<'PY'
-import json
-import sys
-import urllib.request
+command -v vncserver >/dev/null 2>&1
+`);
 
-codename, arch = sys.argv[1:]
-release = json.load(urllib.request.urlopen("https://api.github.com/repos/kasmtech/KasmVNC/releases/latest"))
-assets = [item["browser_download_url"] for item in release["assets"]]
-need = [f"_{codename}_", f"_{arch}.deb"]
-for asset in assets:
-    name = asset.rsplit("/", 1)[-1].lower()
-    if name.endswith(".deb") and all(part in name for part in need):
-        print(asset)
-        break
-else:
-    raise SystemExit(f"没有找到 Ubuntu {codename}/{arch} 的 KasmVNC deb 包")
-PY
-)
-  test -n "$asset"
-  curl -fsSL "$asset" -o /tmp/kasmvncserver.deb
-  apt-get install -y -qq /tmp/kasmvncserver.deb >/dev/null
-  rm -f /tmp/kasmvncserver.deb
-fi
-cat > ${browserConfig.home}/.vnc/xstartup <<'SCRIPT'
+      const encodedTarget = Buffer.from(config.chromium.url, "utf8").toString("base64");
+      const targetDirectory = targetFile.substring(0, targetFile.lastIndexOf("/"));
+      const geometry = `${config.kasmVnc.resolution.width}x${config.kasmVnc.resolution.height}`;
+      const chromiumOptions = [
+        config.chromium.noSandbox ? "--no-sandbox" : "",
+        config.chromium.disableDevShmUsage ? "--disable-dev-shm-usage" : "",
+        config.chromium.disableGpu ? "--disable-gpu" : "",
+        config.chromium.noFirstRun ? "--no-first-run" : "",
+        config.chromium.noDefaultBrowserCheck ? "--no-default-browser-check" : "",
+        config.chromium.kiosk ? "--kiosk" : "",
+      ].filter(option => option).join(" ");
+      const vncOptions = [
+        config.kasmVnc.disableBasicAuth ? "-disableBasicAuth" : "",
+        config.kasmVnc.securityTypes ? `-SecurityTypes ${config.kasmVnc.securityTypes}` : "",
+        `-sslOnly ${config.kasmVnc.sslOnly ? 1 : 0}`,
+        config.kasmVnc.alwaysShared ? "-AlwaysShared" : "",
+        `-localhost ${config.kasmVnc.localhost ? "yes" : "no"}`,
+      ].filter(option => option).join(" ");
+      await ssh.execute(`
+set -e
+if ! id -u ${ssh.quoteShellArg(user)} >/dev/null 2>&1; then useradd --create-home --shell /bin/bash ${ssh.quoteShellArg(user)}; fi
+mkdir -p ${ssh.quoteShellArg(targetDirectory)} ${ssh.quoteShellArg(home + "/.vnc")} ${ssh.quoteShellArg(chromiumDataDir)}
+printf %s ${ssh.quoteShellArg(encodedTarget)} | base64 -d > ${ssh.quoteShellArg(targetFile)}
+chown -R ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(targetDirectory)} ${ssh.quoteShellArg(home + "/.vnc")} ${ssh.quoteShellArg(chromiumDataDir)}
+chmod 644 ${ssh.quoteShellArg(targetFile)}
+cat > ${ssh.quoteShellArg(home + "/.vnc/xstartup")} <<'SCRIPT'
 #!/usr/bin/env bash
 set -e
-export XDG_RUNTIME_DIR=/tmp/${browserConfig.user}-runtime
+export XDG_RUNTIME_DIR=/tmp/${user}-runtime
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
-openbox-session >/tmp/cloud-kasm-openbox.log 2>&1 &
+openbox-session >/tmp/${user}-openbox.log 2>&1 &
 sleep 1
-target=$(cat ${browserConfig.targetFile})
-exec ${browserConfig.chromiumBinary} --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check --kiosk --user-data-dir=${browserConfig.chromiumDataDir} --app="$target" >/tmp/cloud-kasm-chromium.log 2>&1
+target=$(cat ${targetFile})
+exec ${chromiumBinary} ${chromiumOptions} --user-data-dir=${chromiumDataDir} --app="$target" >/tmp/${user}-chromium.log 2>&1
 SCRIPT
-chmod 755 ${browserConfig.home}/.vnc/xstartup
-chown ${browserConfig.user}:${browserConfig.user} ${browserConfig.home}/.vnc/xstartup
-if [ ! -s ${browserConfig.home}/.kasmpasswd ]; then
+chmod 755 ${ssh.quoteShellArg(home + "/.vnc/xstartup")}
+chown ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(home + "/.vnc/xstartup")}
+if [ ! -s ${ssh.quoteShellArg(home + "/.kasmpasswd")} ]; then
   kasm_password=$(openssl rand -base64 32)
-  printf '%s\n%s\n' "$kasm_password" "$kasm_password" | su -s /bin/bash -c 'kasmvncpasswd -u ${browserConfig.user} -wo ${browserConfig.home}/.kasmpasswd' ${browserConfig.user}
-  chown ${browserConfig.user}:${browserConfig.user} ${browserConfig.home}/.kasmpasswd
-  chmod 600 ${browserConfig.home}/.kasmpasswd
+  printf '%s\\n%s\\n' "$kasm_password" "$kasm_password" | su -s /bin/bash -c 'kasmvncpasswd -u ${ssh.quoteShellArg(user)} -wo ${ssh.quoteShellArg(home + "/.kasmpasswd")}' ${ssh.quoteShellArg(user)}
+  chown ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(home + "/.kasmpasswd")}
+  chmod 600 ${ssh.quoteShellArg(home + "/.kasmpasswd")}
 fi
-cat > /etc/kasmvnc/kasmvnc.yaml <<'YAML'
+cat > ${ssh.quoteShellArg(home + "/.vnc/kasmvnc.yaml")} <<'YAML'
 desktop:
   resolution:
-    width: ${browserConfig.resolution.width}
-    height: ${browserConfig.resolution.height}
-  allow_resize: ${browserConfig.allowResize}
+    width: ${config.kasmVnc.resolution.width}
+    height: ${config.kasmVnc.resolution.height}
+  pixel_depth: ${config.kasmVnc.pixelDepth}
+  allow_resize: ${config.kasmVnc.allowResize}
 network:
-  protocol: http
-  interface: 0.0.0.0
-  websocket_port: ${browserConfig.publicPort}
-  use_ipv4: true
-  use_ipv6: false
+  protocol: ${config.kasmVnc.networkProtocol}
+  interface: ${config.kasmVnc.networkInterface}
+  websocket_port: ${config.kasmVnc.port}
+  use_ipv4: ${config.kasmVnc.networkUseIpv4}
+  use_ipv6: ${config.kasmVnc.networkUseIpv6}
   ssl:
-    require_ssl: false
+    require_ssl: ${config.kasmVnc.networkRequireSsl}
 user_session:
-  concurrent_connections_prompt: false
-  idle_timeout: never
+  concurrent_connections_prompt: ${config.kasmVnc.userSessionConcurrentConnectionsPrompt}
+  idle_timeout: ${config.kasmVnc.userSessionIdleTimeout}
 server:
   advanced:
-    kasm_password_file: ${browserConfig.home}/.kasmpasswd
+    kasm_password_file: ${home}/.kasmpasswd
 command_line:
-  prompt: false
+  prompt: ${config.kasmVnc.commandLinePrompt}
 YAML
-cat > /etc/systemd/system/${browserConfig.sessionService} <<'UNIT'
+chown ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(home + "/.vnc/kasmvnc.yaml")}
+cat > ${ssh.quoteShellArg("/etc/systemd/system/" + sessionService)} <<'UNIT'
 [Unit]
-Description=KasmVNC Chromium browser
+Description=KasmVNC Chromium browser ${index}
 After=network-online.target snapd.service
 Wants=network-online.target
 
 [Service]
 Type=forking
-User=${browserConfig.user}
-Group=${browserConfig.user}
-Environment=HOME=${browserConfig.home}
-Environment=USER=${browserConfig.user}
-ExecStart=/usr/bin/vncserver ${browserConfig.display} -geometry ${browserConfig.resolution.width}x${browserConfig.resolution.height} -depth 24 -websocketPort ${browserConfig.publicPort} -disableBasicAuth -SecurityTypes None -sslOnly 0 -AlwaysShared -localhost no -xstartup ${browserConfig.home}/.vnc/xstartup
-ExecStop=/usr/bin/vncserver -kill ${browserConfig.display}
-Restart=always
-RestartSec=3
+User=${user}
+Group=${user}
+Environment=HOME=${home}
+Environment=USER=${user}
+ExecStart=/usr/bin/vncserver ${config.kasmVnc.display} -geometry ${geometry} -depth ${config.kasmVnc.pixelDepth} -websocketPort ${config.kasmVnc.port} ${vncOptions} -xstartup ${home}/.vnc/xstartup
+ExecStop=/usr/bin/vncserver -kill ${config.kasmVnc.display}
+Restart=${config.systemd.restart}
+RestartSec=${config.systemd.restartSec}
 
 [Install]
 WantedBy=multi-user.target
 UNIT
-ufw allow ${browserConfig.publicPort}/tcp >/dev/null
+ufw allow ${config.kasmVnc.port}/tcp >/dev/null 2>&1 || true
 systemctl daemon-reload
-systemctl enable ${browserConfig.sessionService} >/dev/null
-systemctl restart ${browserConfig.sessionService}
+systemctl enable ${ssh.quoteShellArg(sessionService)} >/dev/null
+systemctl restart ${ssh.quoteShellArg(sessionService)}
 `);
   }
 
-  async ensure(url?: string): Promise<ChromiumEndpoint> {
-    await this.setupReady();
-    if (url !== undefined) await this.setTarget(url);
-    const ssh = new Ssh();
-    const { host } = await ssh.config();
-    const target = await this.getTarget();
-    return {
-      host,
-      port: browserConfig.publicPort,
-      secure: false,
-      url: target,
-      accessUrl: `http://${host}:${browserConfig.publicPort}/`,
-    };
+  async add(index: number): Promise<void> {
+    await this.set(index);
   }
 
-  async hasRemote(): Promise<boolean> {
+  async stop(index: number): Promise<void> {
+    const config = store.getState().chromiumServer[index];
+    if (!config) throw new Error(`Chromium instance does not exist: ${index}`);
+    const sessionService = `cloud-kasm-chromium-${index}.service`;
     const ssh = new Ssh();
-    const result = await ssh.execute(`if systemctl is-active --quiet ${browserConfig.sessionService} && ss -ltnH | awk '$4 ~ /(^|:)${browserConfig.publicPort}$/ { found=1 } END { exit !found }'; then printf true; else printf false; fi`);
-    return result.stdout.trim() === "true";
-  }
-
-  async setTarget(url: string): Promise<ChromiumEndpoint> {
-    const target = targetUrlValidator.parse(url);
-    await this.setupReady();
-    const ssh = new Ssh();
-    const encoded = Buffer.from(target, "utf8").toString("base64");
     await ssh.execute(`
-set -e
-printf %s ${ssh.quoteShellArg(encoded)} | base64 -d > ${browserConfig.targetFile}
-chown ${browserConfig.user}:${browserConfig.user} ${browserConfig.targetFile}
-chmod 644 ${browserConfig.targetFile}
-systemctl restart ${browserConfig.sessionService}
+systemctl stop ${ssh.quoteShellArg(sessionService)}
 `);
-    const { host } = await ssh.config();
-    return {
-      host,
-      port: browserConfig.publicPort,
-      secure: false,
-      url: target,
-      accessUrl: `http://${host}:${browserConfig.publicPort}/`,
-    };
   }
 
-  private async getTarget(): Promise<string> {
+  async del(index: number): Promise<void> {
+    const state = store.getState();
+    const config = state.chromiumServer[index];
+    if (!config) throw new Error(`Chromium instance does not exist: ${index}`);
+    const sessionService = `cloud-kasm-chromium-${index}.service`;
+    const user = `chromium-browser-${index}`;
+    const home = `/home/${user}`;
+    const targetFile = `/etc/cloud-browser/${index}/target-url`;
     const ssh = new Ssh();
-    const result = await ssh.execute(`cat ${browserConfig.targetFile} 2>/dev/null || printf ''`);
-    return result.stdout.trim();
+    await ssh.execute(`
+systemctl disable --now ${ssh.quoteShellArg(sessionService)} >/dev/null 2>&1 || true
+rm -f ${ssh.quoteShellArg("/etc/systemd/system/" + sessionService)}
+systemctl daemon-reload
+ufw delete allow ${config.kasmVnc.port}/tcp >/dev/null 2>&1 || true
+rm -rf ${ssh.quoteShellArg(targetFile.substring(0, targetFile.lastIndexOf("/")))} ${ssh.quoteShellArg(home)}
+userdel --remove ${ssh.quoteShellArg(user)} >/dev/null 2>&1 || true
+`);
+    store.setState(state => {
+      state.chromiumServer.splice(index, 1);
+    });
   }
-
 }

@@ -11,21 +11,21 @@ type SftpDirectory = {
 
 export default class extends Base {
   vitePlugin(port: number): Plugin {
-    const vite = new Vite();
-    const nginx = new Nginx("sftp");
+    const vite = new Vite(port);
+    const nginx = new Nginx("sftp", this.remotePath(port));
     let root!: string;
     return {
       name: `sftpPlugin${port}`,
       enforce: "pre",
       configResolved: async config => {
         root = config.root;
-        vite.mergeState(port, {
-          sftp: { url: nginx.getUrl(port) },
+        vite.mergeState({
+          sftp: { url: nginx.url },
         });
       },
       closeBundle: async () => {
         const remote = await this.makeRemote({ port, localPath: root });
-        await nginx.makeRemote(remote.path);
+        await nginx.makeRemote();
       },
     };
   }

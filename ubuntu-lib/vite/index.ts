@@ -4,45 +4,43 @@ import type { Plugin } from "vite";
 import store from "../store/index.ts";
 import merge from "lodash/merge";
 export default class {
-  private async writeFile(root: string, port: number, define: Record<string, unknown>): Promise<void> {
-    const declareDirectory = path.join(root, "src", "declare");
-    await mkdir(declareDirectory, { recursive: true });
-    await fsWriteFile(
-      path.join(declareDirectory, `${port}.ts`),
-      `export default ${JSON.stringify(define, null, 2)} as const;`,
-      "utf8",
-    );
-  }
+  constructor(private readonly devPort: number) { }
 
-  mergeState(devPort: number, define: Record<string, unknown>) {
+  mergeState(define: Record<string, unknown>) {
     store.setState(state => {
-      state.vite[devPort] = merge(
+      state.vite[this.devPort] = merge(
         {},
-        state.vite[devPort],
+        state.vite[this.devPort],
         define,
       );
     });
   }
-  mergeStatePlugin(devPort: number, define: Record<string, unknown>): Plugin {
+  mergeStatePlugin(define: Record<string, unknown>): Plugin {
     return {
-      name: `mergeStatePlugin${devPort}`,
+      name: `mergeStatePlugin${this.devPort}`,
       enforce: "pre",
       configResolved: async config => {
-        this.mergeState(devPort, { ...define, devPort, packagePath: config.root })
+        this.mergeState({ ...define, devPort: this.devPort, packagePath: config.root })
       },
     }
   }
 
-  getStatePlugin(devPort: number): Plugin {
+  writeFilePlugin(): Plugin {
     return {
-      name: `getStatePlugin${devPort}`,
+      name: `writeFilePlugin${this.devPort}`,
       enforce: "post",
       configResolved: async ({ root }) => {
-        const define = store.getState().vite[devPort];
+        const define = store.getState().vite[this.devPort];
         if (define) {
-          await this.writeFile(root, devPort, define);
+          const declareDirectory = path.join(root, "src");
+          await mkdir(declareDirectory, { recursive: true });
+          await fsWriteFile(
+            path.join(declareDirectory, `declare.ts`),
+            `export default ${JSON.stringify(define, null, 2)} as const;`,
+            "utf8",
+          );
         }
-      },
+      }
     }
   }
 }

@@ -20,14 +20,14 @@ export default class extends Base {
     port: number,
     input: Omit<Parameters<this["makeRemote"]>[0], "port" | "cwd">,
   ): Plugin {
-    const vite = new Vite();
-    const nginx = new Nginx("pm2");
+    const vite = new Vite(port);
+    const nginx = new Nginx("pm2", port);
     return {
       name: `pm2Plugin${port}`,
       enforce: "post",
       configResolved: async () => {
-        vite.mergeState(port, {
-          pm2: { url: nginx.getUrl(port) },
+        vite.mergeState({
+          pm2: { url: nginx.url },
         });
       },
       closeBundle: async () => {
@@ -37,7 +37,7 @@ export default class extends Base {
           cwd: sftp.remotePath(port),
           port,
         });
-        await nginx.makeRemote(port);
+        await nginx.makeRemote();
       },
     };
   }

@@ -5,7 +5,6 @@ import Nginx from "../nginx/index.ts";
 import Vite from "../vite/index.ts";
 import type { Plugin } from "vite";
 type Handle = { dispose(): Promise<void>; port: number };
-type ForwardHandle = { handle: Handle };
 type SshForwardResult = {
   readonly remotePort: number;
   hasRemote(): Promise<boolean>;
@@ -13,21 +12,28 @@ type SshForwardResult = {
 };
 
 export default class extends Base {
-  private readonly handles = new Map<number, ForwardHandle>();
-  vitePlugin(port: number): Plugin {
-    const nginx = new Nginx("sshForward");
-    const vite = new Vite();
+  private handle?: Handle;
+  constructor(private readonly port: number) {
+    super();
+  }
+  vitePlugin(): Plugin {
+    const nginx = new Nginx("sshForward", this.port);
+    const vite = new Vite(this.port);
     return {
-      name: `sshForwardPlugin${port}`,
+      name: `sshForwardPlugin${this.port}`,
       enforce: "pre",
       configResolved: async () => {
-        vite.mergeState(port, {
-          sshForward: { url: nginx.getUrl(port) },
+        vite.mergeState({
+          sshForward: { url: nginx.url },
         });
       },
       configureServer: async () => {
-        const forward = await this.getRemote(port);
-        return () => forward.close();
+        const forward = await this.getRemote();
+        await nginx.makeRemote();
+        return async () => {
+          await forward.close();
+          await nginx.closeRemote();
+        };
       },
     };
   }
@@ -35,68 +41,65 @@ export default class extends Base {
     const ssh = new Ssh();
     await ssh.execute("true");
   }
-  async makeRemote(port: number): Promise<SshForwardResult> {
+  async makeRemote(): Promise<SshForwardResult> {
     await this.setupReady();
-    await this.ensureForward(port);
+    await this.ensureForward();
     return {
-      remotePort: this.handles.get(port)!.handle.port,
-      hasRemote: () => this.hasRemote(port),
-      close: () => this.closeRemote(port),
+      remotePort: this.handle!.port,
+      hasRemote: () => this.hasRemote(),
+      close: () => this.closeRemote(),
     };
   }
-  async hasRemote(port: number): Promise<boolean> {
-    const current = this.handles.get(port);
-    if (!current) return false;
-    return this.remotePortIsListening(port);
+  async hasRemote(): Promise<boolean> {
+    if (!this.handle) return false;
+    return this.remotePortIsListening();
   }
-  async getRemote(port: number): Promise<SshForwardResult> {
+  async getRemote(): Promise<SshForwardResult> {
     await this.setupReady();
-    if (!await this.hasRemote(port)) {
-      return this.makeRemote(port);
+    if (!await this.hasRemote()) {
+      return this.makeRemote();
     }
-    const current = this.handles.get(port);
-    if (!current) throw new Error(`SSH 内网穿透句柄不存在: ${port}`);
+    if (!this.handle) throw new Error("SSH 内网穿透句柄不存在");
     return {
-      remotePort: current.handle.port,
-      hasRemote: () => this.hasRemote(port),
-      close: () => this.closeRemote(port),
+      remotePort: this.handle.port,
+      hasRemote: () => this.hasRemote(),
+      close: () => this.closeRemote(),
     };
-  };
-  async closeRemote(port: number): Promise<void> {
-    const current = this.handles.get(port);
+  }
+  async closeRemote(): Promise<void> {
+    const current = this.handle;
     if (!current) return;
     try {
-      await current.handle.dispose();
+      await current.dispose();
     } finally {
-      this.handles.delete(port);
+      this.handle = undefined;
     }
   }
-  async dispose(): Promise<void> { await Promise.all([...this.handles.keys()].map(port => this.closeRemote(port))); }
-  private async ensureForward(port: number): Promise<void> {
+  private async ensureForward(): Promise<void> {
     const ssh = new Ssh();
-    const current = this.handles.get(port);
-    if (current && await this.remotePortIsListening(port)) return;
+    const current = this.handle;
+    if (current && await this.remotePortIsListening()) return;
     if (current) {
       try {
-        await current.handle.dispose();
+        await current.dispose();
       } finally {
-        this.handles.delete(port);
+        this.handle = undefined;
       }
     }
-    if (await this.remotePortIsListening(port)) {
-      throw new Error(`开发端口已被远程服务占用: ${port}`);
+    if (await this.remotePortIsListening()) {
+      throw new Error(`开发端口已被远程服务占用: ${this.port}`);
     }
-    const handle = await ssh.forwardIn("0.0.0.0", port, (_details, accept, reject) => {
-      const local = net.createConnection({ host: "127.0.0.1", port });
+    const handle = await ssh.forwardIn("0.0.0.0", this.port, (_details, accept, reject) => {
+      const local = net.createConnection({ host: "127.0.0.1", port: this.port });
       const failed = () => { local.destroy(); reject(); };
       local.once("error", failed);
       local.once("connect", () => { local.off("error", failed); const remote = accept(); local.pipe(remote).pipe(local); });
     }) as Handle;
-    this.handles.set(port, { handle });
+    this.handle = handle;
   }
-  private async remotePortIsListening(port: number): Promise<boolean> {
+  private async remotePortIsListening(): Promise<boolean> {
     const ssh = new Ssh();
-    const result = await ssh.execute(`ss -ltnH | awk '$4 ~ /(^|:)${port}$/ { found=1 } END { print found ? "true" : "false" }'`);
+    const result = await ssh.execute(`ss -ltnH | awk '$4 ~ /(^|:)${this.port}$/ { found=1 } END { print found ? "true" : "false" }'`);
     return result.stdout.trim() === "true";
   }
 }

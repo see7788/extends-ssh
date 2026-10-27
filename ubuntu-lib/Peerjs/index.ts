@@ -4,6 +4,7 @@ import Ssh from "../ssh/index.ts";
 import StunServer from "../stunServer/index.ts";
 import store from "../store/index.ts";
 import Vite from "../vite/index.ts";
+import type { PeerOptions } from "peerjs";
 import type { Plugin } from "vite";
 
 export default class extends Base {
@@ -55,7 +56,7 @@ exit 1
     }
   }
 
-  get endpoint() {
+  get endpoint(): PeerOptions {
     const { peerjs } = store.getState();
     const ssh = new Ssh();
     const stunServer = new StunServer();
@@ -72,12 +73,12 @@ exit 1
   }
 
   vitePlugin(devPort: number): Plugin {
-    const vite = new Vite();
+    const vite = new Vite(devPort);
     return {
       name: `peerjsPlugin${devPort}`,
       enforce: "pre",
       configResolved: async () => {
-        vite.mergeState(devPort, { peerjs: this.endpoint });
+        vite.mergeState({ peerjs: this.endpoint });
       },
       configureServer: async () => {
         const stunServer = new StunServer();

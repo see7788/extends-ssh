@@ -5,12 +5,6 @@ import Docker from "../docker/index.ts";
 import Ssh from "../ssh/index.ts";
 import store from "../store/index.ts";
 
-type StunEndpoint = {
-  readonly host: string;
-  readonly port: number;
-  readonly secure: false;
-};
-
 export default class extends Base {
   get port(): number {
     return store.getState().stunServer.port;
@@ -19,6 +13,10 @@ export default class extends Base {
     const docker = new Docker();
     const ssh = new Ssh();
     const { stunServer } = store.getState();
+    const container = ssh.quoteShellArg(stunServer.containerName);
+    const image = ssh.quoteShellArg(stunServer.image);
+    const restartPolicy = ssh.quoteShellArg(stunServer.restartPolicy);
+    const mode = ssh.quoteShellArg(stunServer.mode);
     const { host } = await ssh.config();
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
       throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
@@ -29,47 +27,57 @@ export default class extends Base {
     }
     const state = { host, port: stunServer.port };
     await docker.setupReady();
-    const occupancy = await ssh.execute(`if docker inspect coturn >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' coturn)" = true ]; then printf own; elif ss -ltnH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }' || ss -lunH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }'; then printf occupied; else printf free; fi`);
+    const occupancy = await ssh.execute(`if docker inspect ${container} >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' ${container})" = true ]; then printf own; elif ss -ltnH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }' || ss -lunH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }'; then printf occupied; else printf free; fi`);
     if (occupancy.stdout.trim() === "occupied") {
       throw new Error(`STUN 端口已被远程服务占用: ${String(state.port)}`);
     }
     await ssh.execute(`
 set -e
 docker info >/dev/null
-if docker inspect coturn >/dev/null 2>&1; then
-  docker start coturn >/dev/null
+if docker inspect ${container} >/dev/null 2>&1; then
+  docker start ${container} >/dev/null
 else
-  docker pull coturn/coturn:latest
-  docker run -d --restart=unless-stopped --name coturn \
+  docker pull ${image}
+  docker run -d --restart=${restartPolicy} --name ${container} \
     -p ${state.port}:${state.port}/tcp \
     -p ${state.port}:${state.port}/udp \
-    coturn/coturn:latest --stun-only --listening-port=${state.port}
+    ${image} --${mode} --listening-port=${state.port}
 fi
 ufw allow ${state.port}/tcp >/dev/null
 ufw allow ${state.port}/udp >/dev/null
 ufw reload >/dev/null
-test "$(docker inspect -f '{{.State.Running}}' coturn)" = true
+test "$(docker inspect -f '{{.State.Running}}' ${container})" = true
 ss -lun | grep -Eq ':${state.port}[[:space:]]'
 `);
     await this.bindingRequest(state.host, state.port);
   }
 
-  async status(): Promise<StunEndpoint> {
-    await this.setupReady();
+  async update(): Promise<void> {
     const ssh = new Ssh();
     const { stunServer } = store.getState();
-    const { host } = await ssh.config();
-    return { host, port: stunServer.port, secure: false };
-  }
-
-  async hasRemote(): Promise<boolean> {
-    const ssh = new Ssh();
-    const { stunServer } = store.getState();
-    if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) return false;
-    const result = await ssh.execute(`if docker inspect coturn >/dev/null 2>&1 \
-  && [ "$(docker inspect -f '{{.State.Running}}' coturn)" = true ] \
-  && ss -lunH | awk '$4 ~ /(^|:)${stunServer.port}$/ { found=1 } END { exit !found }'; then printf true; else printf false; fi`);
-    return result.stdout.trim() === "true";
+    const { host, port: sshPort } = await ssh.config();
+    if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
+      throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
+    }
+    if (stunServer.port === sshPort || stunServer.port === 80 || stunServer.port === 443) {
+      throw new Error(`STUN 端口与固定服务端口冲突: ${String(stunServer.port)}`);
+    }
+    const container = ssh.quoteShellArg(stunServer.containerName);
+    const image = ssh.quoteShellArg(stunServer.image);
+    const restartPolicy = ssh.quoteShellArg(stunServer.restartPolicy);
+    const mode = ssh.quoteShellArg(stunServer.mode);
+    await new Docker().setupReady();
+    await ssh.execute(`set -e
+if docker inspect ${container} >/dev/null 2>&1; then docker rm -f ${container} >/dev/null; fi
+docker pull ${image}
+docker run -d --restart=${restartPolicy} --name ${container} \\
+  -p ${stunServer.port}:${stunServer.port}/tcp -p ${stunServer.port}:${stunServer.port}/udp \\
+  ${image} --${mode} --listening-port=${stunServer.port}
+ufw allow ${stunServer.port}/tcp >/dev/null
+ufw allow ${stunServer.port}/udp >/dev/null
+ufw reload >/dev/null
+test "$(docker inspect -f '{{.State.Running}}' ${container})" = true`);
+    await this.bindingRequest(host, stunServer.port);
   }
 
   private bindingRequest(host: string, port: number): Promise<void> {

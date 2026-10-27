@@ -14,11 +14,3 @@ export default mcpserver.metas("/apt").add({
     return { ready: true };
   },
 })
-  .add({
-    protocol: "tool",
-    path: "/hasRemote",
-    description: "检查远端 Apt 基础组件是否已经就绪，不执行安装。",
-    schema: {},
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => ({ hasRemote: await apt.hasRemote() }),
-  });

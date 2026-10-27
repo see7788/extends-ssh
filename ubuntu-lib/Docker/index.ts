@@ -16,10 +16,4 @@ systemctl is-active --quiet docker
 docker info >/dev/null
 `);
   }
-
-  async hasRemote(): Promise<boolean> {
-    const ssh = new Ssh();
-    const result = await ssh.execute("if command -v docker >/dev/null 2>&1 && systemctl is-active --quiet docker && docker info >/dev/null 2>&1; then printf true; else printf false; fi");
-    return result.stdout.trim() === "true";
-  }
 }
