@@ -15,7 +15,7 @@ ssh/
   index.ts             独立业务类
   zod.ts              Zod 运行时校验器（如有）
   mcpserver.ts        MCP 工具注册（如有）
-vitePlugin/
+vite/
   Base.ts              Vite producer 组合器
 ```
 

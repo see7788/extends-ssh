@@ -1,15 +1,14 @@
 ﻿import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 
-
-const nginxStore: ImmerStateCreator<{
+type NginxState = {
   nginx: {
-    sitesAvailableRoot: string;
-    sitesEnabledRoot: string;
+    root: string;
   };
-}> = () => ({
+};
+
+const nginxStore: ImmerStateCreator<NginxState> = () => ({
   nginx: {
-    sitesAvailableRoot: "/etc/nginx/sites-available",
-    sitesEnabledRoot: "/etc/nginx/sites-enabled",
+    root: "/www/server/panel/vhost/nginx",
   },
 });
 

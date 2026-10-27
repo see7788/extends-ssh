@@ -6,7 +6,7 @@ import type sshStore from "../ssh/store.ts";
 import type stunServerStore from "../stunServer/store.ts";
 import type nginxStore from "../nginx/store.ts";
 import type nodejsStore from "../nodejs/store.ts";
-import type vitePluginStore from "../vitePlugin/store.ts"
+import type viteStore from "../vite/store.ts"
 import type postsStore from "../posts/store.ts";
 export type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof certificateStore>
@@ -16,5 +16,5 @@ export type Store = ReturnType<typeof publicStore>
   & ReturnType<typeof stunServerStore>
   & ReturnType<typeof nginxStore>
   & ReturnType<typeof nodejsStore>
-  & ReturnType<typeof vitePluginStore>
+  & ReturnType<typeof viteStore>
   & ReturnType<typeof postsStore>

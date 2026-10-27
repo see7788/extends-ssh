@@ -1,7 +1,10 @@
 ﻿import Base from "../public/index.ts";
+import Nginx from "../nginx/index.ts";
 import Nodejs from "../nodejs/index.ts";
 import Sftp from "../sftp/index.ts";
 import Ssh from "../ssh/index.ts";
+import Vite from "../vite/index.ts";
+import type { Plugin } from "vite";
 
 type Pm2Process = {
   readonly name: string;
@@ -13,20 +16,28 @@ type Pm2Process = {
 };
 
 export default class extends Base {
-  vite(
+  vitePlugin(
     port: number,
     input: Omit<Parameters<this["makeRemote"]>[0], "port" | "cwd">,
-  ) {
+  ): Plugin {
+    const vite = new Vite();
     return {
-      state: { host: `${port}.${this.domain}` },
-      actions: async () => {
+      name: `pm2Plugin${port}`,
+      enforce: "post",
+      configResolved: async () => {
+        vite.mergeState(port, {
+          pm2: { host: `${port}.${this.domain}` },
+        });
+      },
+      closeBundle: async () => {
         const sftp = new Sftp();
-        const process = await this.makeRemote({
+        await this.makeRemote({
           ...input,
           cwd: sftp.remotePath(port),
           port,
         });
-        return () => process.close();
+        const nginx = new Nginx();
+        await nginx.makeRemote(port);
       },
     };
   }

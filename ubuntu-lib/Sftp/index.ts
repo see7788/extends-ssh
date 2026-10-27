@@ -1,18 +1,31 @@
 ﻿import Base from "../public/index.ts";
+import Nginx from "../nginx/index.ts";
 import store from "../store/index.ts";
 import Ssh from "../ssh/index.ts";
+import Vite from "../vite/index.ts";
+import type { Plugin } from "vite";
 type SftpDirectory = {
-  readonly path: string;
+  readonly path: `${string}/${number}`;
   hasRemote(): Promise<boolean>;
 };
 
 export default class extends Base {
-  vite(port: number, localPath: string) {
+  vitePlugin(port: number): Plugin {
+    const vite = new Vite();
+    let root!: string;
     return {
-      state: { host: `${port}.${this.domain}` },
-      actions: async () => {
-        await this.makeRemote({ port, localPath });
-        return async () => { };
+      name: `sftpPlugin${port}`,
+      enforce: "pre",
+      configResolved: async config => {
+        root = config.root;
+        vite.mergeState(port, {
+          sftp: { host: `${port}.${this.domain}` },
+        });
+      },
+      closeBundle: async () => {
+        const remote = await this.makeRemote({ port, localPath: root });
+        const nginx = new Nginx();
+        await nginx.makeRemote(remote.path);
       },
     };
   }
@@ -63,7 +76,7 @@ export default class extends Base {
   private shell(value: string): string {
     return `'${value.replace(/'/g, `\'"'"'`)}'`;
   }
-  public remotePath(port: number): string {
+  public remotePath(port: number): `${string}/${number}` {
     return `${store.getState().sftp.remoteRoot}/${port}`;
   }
 }

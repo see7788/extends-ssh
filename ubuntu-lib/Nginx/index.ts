@@ -2,12 +2,10 @@
 import Certificate from "../certificate/index.ts";
 import { posix } from "node:path";
 import Ssh from "../ssh/index.ts";
+import store from "../store/index.ts";
 
 type NginxRoute = {
-  readonly subdomain: string;
-  readonly host: string;
-  readonly port: 443;
-  readonly secure: true;
+  readonly url: string;
   hasRemote(): Promise<boolean>;
   close(): Promise<void>;
 };
@@ -29,10 +27,7 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
       return this.makeRemote(port);
     }
     return {
-      subdomain: this.remoteDescription(port),
-      host: this.remoteDescription(port),
-      port: 443,
-      secure: true,
+      url: this.getUrl(port),
       hasRemote: () => this.hasRemote(port),
       close: () => this.closeRemote(port),
     };
@@ -46,16 +41,13 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
   && grep -Fq -- ${this.shell("listen 443 ssl;")} ${this.shell(route)}; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
-  async makeRemote(input: number | string): Promise<NginxRoute> {
+  async makeRemote(input: number | `${string}/${number}`): Promise<NginxRoute> {
     await this.setupReady();
     if (typeof input === "number") {
       const port = input;
       await this.writeRemote(port, `  location / { proxy_pass http://127.0.0.1:${port}; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }`);
       return {
-        subdomain: this.remoteDescription(port),
-        host: this.remoteDescription(port),
-        port: 443,
-        secure: true,
+        url: this.getUrl(input),
         hasRemote: () => this.hasRemote(port),
         close: () => this.closeRemote(port),
       };
@@ -65,10 +57,7 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
     const port = Number(basename);
     await this.writeRemote(port, `  location / { root ${path}; index index.html; try_files $uri $uri/ =404; }`);
     return {
-      subdomain: this.remoteDescription(port),
-      host: this.remoteDescription(port),
-      port: 443,
-      secure: true,
+      url: this.getUrl(input),
       hasRemote: () => this.hasRemote(port),
       close: () => this.closeRemote(port),
     };
@@ -76,11 +65,12 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
   private async writeRemote(value: number, location: string): Promise<void> {
     const certificate = new Certificate();
     const ssh = new Ssh();
+    const root = store.getState().nginx.root;
     const subdomain = this.remoteDescription(value);
     const route = this.routePath(value);
     const certificatePaths = await certificate.makeRemote(subdomain);
     await ssh.execute(`set -e
-mkdir -p ${this.shell("/www/server/panel/vhost/nginx")}
+mkdir -p ${this.shell(root)}
 cat > ${this.shell(route)} <<'NGINX'
 server {
   listen 80;
@@ -108,10 +98,14 @@ rm -f ${this.shell(this.routePath(port))}
 /www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf`);
   }
   private routePath(port: number): string {
-    return `/www/server/panel/vhost/nginx/extends-ssh-${port}.conf`;
+    return `${store.getState().nginx.root}/extends-ssh-${port}.conf`;
   }
   private shell(value: string): string { return `'${value.replace(/'/g, `\'"'"'`)}'`; }
-  private remoteDescription(port: number): string {
+  private remoteDescription(input: number | `${string}/${number}`): string {
+    const port = typeof input === "number" ? input : Number(posix.basename(input));
     return `${port}.${this.domain}`;
+  }
+  getUrl(input: number | `${string}/${number}`): string {
+    return `https://${this.remoteDescription(input)}`;
   }
 }
