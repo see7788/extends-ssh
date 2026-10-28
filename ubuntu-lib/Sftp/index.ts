@@ -8,8 +8,12 @@ export default class extends Base {
   async upload(localPath: string, remotePath: string): Promise<void> {
     await this.setupReady();
     const ssh = new Ssh();
-    if (!await ssh.putDirectory(localPath, remotePath, { recursive: true, validate: () => true })) {
-      throw new Error(`SFTP directory upload failed: ${remotePath}`);
+    try {
+      if (!await ssh.putDirectory(localPath, remotePath, { recursive: true, validate: () => true })) {
+        throw new Error(`SFTP directory upload failed: ${remotePath}`);
+      }
+    } finally {
+      ssh.dispose();
     }
   }
 
@@ -34,7 +38,11 @@ export default class extends Base {
   }
   protected async setup(): Promise<void> {
     const ssh = new Ssh();
-    await ssh.execute("true");
+    try {
+      await ssh.execute("true");
+    } finally {
+      ssh.dispose();
+    }
   }
   async getRemote(port: number): Promise<{ readonly path: `/www/wwwroot/extends-ssh/${number}`; hasRemote(): Promise<boolean>; }> {
     await this.setupReady();

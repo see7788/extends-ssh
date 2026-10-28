@@ -2,9 +2,14 @@
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
 import store from "../store.ts";
 
-export default class extends Base {
+export default class Ssh extends Base {
+  private static readonly instances = new Set<Ssh>();
   private readonly client = new NodeSSH();
   private connectPromise?: Promise<void>;
+  public constructor() {
+    super();
+    Ssh.instances.add(this);
+  }
   get host(): string {
     return store.getState().ssh.host;
   }
@@ -120,5 +125,10 @@ printf "%s\n%s" "$path" "$command"
 
   dispose(): void {
     this.client.dispose();
+    Ssh.instances.delete(this);
+  }
+
+  static disposeAll(): void {
+    for (const ssh of [...Ssh.instances]) ssh.dispose();
   }
 }

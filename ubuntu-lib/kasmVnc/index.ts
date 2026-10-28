@@ -3,20 +3,15 @@ import path from "node:path";
 import Apt from "../apt/index.ts";
 import Ssh from "../ssh/index.ts";
 import Sftp from "../sftp/index.ts";
-import type { Plugin } from "vite";
 import store from "../store.ts";
-
+import type { Plugin } from "vite";
 export default class extends Base {
-  private readonly index: number;
-
-  constructor(index = 0) {
+  constructor(readonly index = 0) {
     super();
-    this.index = index;
   }
-
-  // 官方 KasmVNC 集成仓库：https://github.com/kasmtech/KasmVNC
   // 官方 kasmweb 前端子模块（Kasm 维护的 noVNC fork）：https://github.com/kasmtech/noVNC
-  vitePlugin_kasm(): Plugin {
+  //针对kasm的ui覆盖
+  vitePlugin_kasmUi(): Plugin {
     let outputDirectory!: string;
     return {
       name: "vitePlugin_kasm",
@@ -25,12 +20,19 @@ export default class extends Base {
         outputDirectory = path.resolve(config.root, config.build.outDir);
       },
       closeBundle: async () => {
-        await new Sftp().upload(outputDirectory, store.getState().kasmVnc.server.httpdDirectory);
+        try {
+          await new Sftp().upload(outputDirectory, store.getState().kasmVnc.server.httpdDirectory);
+          console.log("sftp success");
+          await this.set(this.index);
+          console.log(`set(${this.index}) success`);
+        } finally {
+          Ssh.disposeAll();
+        }
       },
     };
   }
-  
-  vitePlugin_chromium(index:number): Plugin {
+  //针对chromium的拓展
+  vitePlugin_chromiumExtension(): Plugin {
     let outputDirectory!: string;
     return {
       name: "vitePlugin_chromium",
@@ -39,7 +41,15 @@ export default class extends Base {
         outputDirectory = path.resolve(config.root, config.build.outDir);
       },
       closeBundle: async () => {
-        await new Sftp().upload(outputDirectory, store.getState().kasmVnc.server.httpdDirectory);
+        try {
+          const extensionDirectory = store.getState().kasmVnc.chromium.extensionDirectory;
+          await new Sftp().upload(outputDirectory, extensionDirectory);
+          console.log("sftp success");
+          await this.set(this.index);
+          console.log(`set(${this.index}) success`);
+        } finally {
+          Ssh.disposeAll();
+        }
       },
     };
   }
@@ -222,6 +232,7 @@ systemctl restart ${ssh.quoteShellArg(sessionService)}
     const home = `/home/${user}`;
     const targetFile = `${install.targetRoot}/${index}/target-url`;
     const chromiumDataDir = `${this.directory(install.dataDir, "Chromium dataDir")}${this.instanceSuffix(index)}`;
+    const extensionDirectory = this.directory(install.extensionDirectory, "Chromium extensionDirectory");
     const chromiumBinary = install.binary;
     const ssh = new Ssh();
     const apt = new Apt();
@@ -257,6 +268,7 @@ command -v vncserver >/dev/null 2>&1
       chromium.noFirstRun ? "--no-first-run" : "",
       chromium.noDefaultBrowserCheck ? "--no-default-browser-check" : "",
       chromium.kiosk ? "--kiosk" : "",
+      `--load-extension=${ssh.quoteShellArg(extensionDirectory)}`,
     ].filter(option => option).join(" ");
     const targetArgument = chromium.appMode ? '--app="$target"' : '"$target"';
     const targetSetup = `

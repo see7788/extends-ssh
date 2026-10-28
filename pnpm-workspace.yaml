@@ -1,6 +1,8 @@
 packages:
+  - "../runtimeproxy/libs/invoke-protocol"
   - "ubuntu-lib"
   - "libs/kasmvnc-novnc"
+  - "libs/chromiumExtension"
   - "../extends-mcp/libs/mcpserver"
   - "../extends-mcp/libs/user-response-templates-mcpserver"
   - "../extends-zustand/libs/zustand-lib"

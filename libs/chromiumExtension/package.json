@@ -1,0 +1,19 @@
+{
+  "name": "chromium-extension-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch --configLoader runner",
+    "build": "vite build --configLoader runner",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.40",
+    "typescript": "^5.9.3",
+    "ubuntu-lib": "workspace:*"
+  },
+  "dependencies": {
+    "vite": "^8.3.5"
+  }
+}

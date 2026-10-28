@@ -22,8 +22,9 @@
     "lint": "eslint app core po/po2js po/xgettext-html tests utils",
     "test": "karma start karma.conf.js",
     "prepublish": "node ./utils/use_require.js --clean",
-    "serve": "vite",
-    "build": "vite build && mkdir -p dist/app dist/core/decoders/qoi && cp -a app/locale dist/app && cp package.json dist/ && cp core/decoders/qoi/qoi_viewer_bg.wasm dist/core/decoders/qoi && cp dist/index.html dist/vnc.html",
+    "dev": "vite --configLoader runner",
+    "serve": "vite --configLoader runner",
+    "build": "vite build --configLoader runner",
     "preview": "vite preview"
   },
   "repository": {
@@ -38,6 +39,7 @@
   },
   "homepage": "https://github.com/kasmtech/noVNC",
   "devDependencies": {
+    "@types/node": "20.19.43",
     "@babel/cli": "^7.0.0",
     "@babel/core": "^7.0.0",
     "@babel/plugin-transform-modules-commonjs": "^7.0.0",
@@ -84,7 +86,8 @@
     "sass-loader": "^10.1.0",
     "sinon": "*",
     "sinon-chai": "^2.8.0",
-    "vite": "^6.0.5",
+    "typescript": "5.9.3",
+    "vite": "^6.3.6",
     "vite-plugin-env-compatible": "^2.0.1",
     "vite-plugin-minify": "^2.1.0",
     "vite-plugin-restart": "^0.4.2"

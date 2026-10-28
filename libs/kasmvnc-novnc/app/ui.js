@@ -57,7 +57,7 @@ import { perfLogger } from '../core/util/performance-logger.js';
 // Enable performance logging
 // perfLogger.enable(5000);
 
-const PAGE_TITLE = "Remote Desktop";
+const PAGE_TITLE = "KasmVNC";
 
 var currentEventCount = -1;
 var idleCounter = 0;

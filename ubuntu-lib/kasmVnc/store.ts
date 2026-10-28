@@ -12,6 +12,7 @@ const kasmVncStore: ImmerStateCreator<{
       readonly aptPackages: readonly string[]; // Chromium 系统依赖
       readonly snapPackage: "chromium"; // Chromium Snap 包名
       readonly binary: "/snap/chromium/current/usr/lib/chromium-browser/chrome"; // Chromium 可执行文件
+      readonly extensionDirectory: "/opt/extends-ssh/chromium-extension"; // Chromium 扩展静态文件目录
       readonly dataDir: "/var/lib/kasm-vnc/chromium"; // Chromium 实例数据根目录，源码按实例追加后缀
       readonly targetRoot: "/var/lib/kasm-vnc/chromium-target"; // Chromium 启动目标文件根目录
     };
@@ -90,6 +91,7 @@ const kasmVncStore: ImmerStateCreator<{
       aptPackages: ["python3", "openbox", "openssl", "snapd", "libasound2t64", "libnss3", "libatk-bridge2.0-0", "libgtk-3-0", "libgbm1", "libxss1", "libu2f-udev", "libvulkan1"],
       snapPackage: "chromium",
       binary: "/snap/chromium/current/usr/lib/chromium-browser/chrome",
+      extensionDirectory: "/opt/extends-ssh/chromium-extension",
       dataDir: "/var/lib/kasm-vnc/chromium",
       targetRoot: "/var/lib/kasm-vnc/chromium-target",
     },

@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./index/index.ts",
+    "./kasmVnc": "./kasmVnc/index.ts",
     "./slices": "./slices.ts"
   },
   "scripts": {
