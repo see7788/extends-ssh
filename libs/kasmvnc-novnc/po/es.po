@@ -1,0 +1,510 @@
+# Spanish translations for noVNC package
+# Traducciones al español para el paquete noVNC.
+# Copyright (C) 2018 The noVNC Authors
+# This file is distributed under the same license as the noVNC package.
+# Juanjo Diaz <juanjo.diazmo@gmail.com>, 2018.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: noVNC 1.0.0-testing.2\n"
+"Report-Msgid-Bugs-To: novnc@googlegroups.com\n"
+"POT-Creation-Date: 2020-07-03 16:11+0200\n"
+"PO-Revision-Date: 2018-01-30 19:14-0800\n"
+"Last-Translator: Juanjo Diaz <juanjo.diazmo@gmail.com>\n"
+"Language-Team: Spanish\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: ../app/ui.js:394
+msgid "Connecting..."
+msgstr "Conectando..."
+
+#: ../app/ui.js:401
+msgid "Disconnecting..."
+msgstr "Desconectando..."
+
+#: ../app/ui.js:407
+msgid "Reconnecting..."
+msgstr "Reconectando..."
+
+#: ../app/ui.js:412
+msgid "Internal error"
+msgstr "Error interno"
+
+#: ../app/ui.js:1008
+msgid "Must set host"
+msgstr "Debes configurar el host"
+
+#: ../app/ui.js:1090
+msgid "Connected (encrypted) to "
+msgstr "Conectado (con encriptación) a"
+
+#: ../app/ui.js:1092
+msgid "Connected (unencrypted) to "
+msgstr "Conectado (sin encriptación) a"
+
+#: ../app/ui.js:1115
+msgid "Something went wrong, connection is closed"
+msgstr "Algo salió mal, la conexión está cerrada"
+
+#: ../app/ui.js:1118
+msgid "Failed to connect to server"
+msgstr "Error al conectar con el servidor"
+
+#: ../app/ui.js:1128
+msgid "Disconnected"
+msgstr "Desconectado"
+
+#: ../app/ui.js:1143
+msgid "New connection has been rejected with reason: "
+msgstr "La nueva conexión ha sido rechazada por el motivo: "
+
+#: ../app/ui.js:1146
+msgid "New connection has been rejected"
+msgstr "Nueva conexión ha sido rechazada"
+
+#: ../app/ui.js:1181
+msgid "Credentials are required"
+msgstr "Se requieren credenciales"
+
+#: ../vnc.html:74
+msgid "KasmVNC encountered an error:"
+msgstr "KasmVNC encontró un error:"
+
+#: ../vnc.html:84
+msgid "Hide/Show the control bar"
+msgstr "Ocultar/Mostrar la barra de control"
+
+#: ../vnc.html:91
+msgid "Drag"
+msgstr "Arrastrar"
+
+#: ../vnc.html:91
+msgid "Move/Drag Viewport"
+msgstr "Mover/Arrastrar la ventana"
+
+#: ../vnc.html:97
+msgid "Keyboard"
+msgstr "Teclado"
+
+#: ../vnc.html:97
+msgid "Show Keyboard"
+msgstr "Mostrar teclado"
+
+#: ../vnc.html:102
+msgid "Extra keys"
+msgstr "Teclas adicionales"
+
+#: ../vnc.html:102
+msgid "Show Extra Keys"
+msgstr "Mostrar Teclas Adicionales"
+
+#: ../vnc.html:107
+msgid "Ctrl"
+msgstr "Ctrl"
+
+#: ../vnc.html:107
+msgid "Toggle Ctrl"
+msgstr "Pulsar/Soltar Ctrl"
+
+#: ../vnc.html:110
+msgid "Alt"
+msgstr "Alt"
+
+#: ../vnc.html:110
+msgid "Toggle Alt"
+msgstr "Pulsar/Soltar Alt"
+
+#: ../vnc.html:113
+msgid "Toggle Windows"
+msgstr "Alternar ventanas"
+
+#: ../vnc.html:113
+msgid "Windows"
+msgstr "ventanas"
+
+#: ../vnc.html:116
+msgid "Send Tab"
+msgstr "Enviar Tabulación"
+
+#: ../vnc.html:116
+msgid "Tab"
+msgstr "Tabulación"
+
+#: ../vnc.html:119
+msgid "Esc"
+msgstr "Esc"
+
+#: ../vnc.html:119
+msgid "Send Escape"
+msgstr "Enviar Escape"
+
+#: ../vnc.html:122
+msgid "Ctrl+Alt+Del"
+msgstr "Ctrl+Alt+Del"
+
+#: ../vnc.html:122
+msgid "Send Ctrl-Alt-Del"
+msgstr "Enviar Ctrl+Alt+Del"
+
+#: ../vnc.html:129
+msgid "Shutdown/Reboot"
+msgstr "Apagar/Reiniciar"
+
+#: ../vnc.html:129
+msgid "Shutdown/Reboot..."
+msgstr "Apagar/Reiniciar..."
+
+#: ../vnc.html:135
+msgid "Power"
+msgstr "Encender"
+
+#: ../vnc.html:137
+msgid "Shutdown"
+msgstr "Apagar"
+
+#: ../vnc.html:138
+msgid "Reboot"
+msgstr "Reiniciar"
+
+#: ../vnc.html:139
+msgid "Reset"
+msgstr "Restablecer"
+
+#: ../vnc.html:144 ../vnc.html:150
+msgid "Clipboard"
+msgstr "Portapapeles"
+
+#: ../vnc.html:154
+msgid "Clear"
+msgstr "Vaciar"
+
+#: ../vnc.html:160
+msgid "Fullscreen"
+msgstr "Pantalla Completa"
+
+#: ../vnc.html:165 ../vnc.html:172
+msgid "Settings"
+msgstr "Configuraciones"
+
+#: ../vnc.html:175
+msgid "Shared Mode"
+msgstr "Modo Compartido"
+
+#: ../vnc.html:178
+msgid "View Only"
+msgstr "Solo visualización"
+
+#: ../vnc.html:182
+msgid "Clip to Window"
+msgstr "Recortar al tamaño de la ventana"
+
+#: ../vnc.html:185
+msgid "Scaling Mode:"
+msgstr "Modo de escalado:"
+
+#: ../vnc.html:187
+msgid "None"
+msgstr "Ninguno"
+
+#: ../vnc.html:188
+msgid "Local Scaling"
+msgstr "Escalado Local"
+
+#: ../vnc.html:189
+msgid "Remote Resizing"
+msgstr "Cambio de tamaño remoto"
+
+#: ../vnc.html:194
+msgid "Advanced"
+msgstr "Avanzado"
+
+#: ../vnc.html:197
+msgid "Quality:"
+msgstr "Calidad:"
+
+#: ../vnc.html:201
+msgid "Compression level:"
+msgstr "Nivel de compresión:"
+
+#: ../vnc.html:206
+msgid "Repeater ID:"
+msgstr "ID del Repetidor"
+
+#: ../vnc.html:210
+msgid "WebSocket"
+msgstr "WebSocket"
+
+#: ../vnc.html:213
+msgid "Encrypt"
+msgstr ""
+
+#: ../vnc.html:216
+msgid "Host:"
+msgstr "Host"
+
+#: ../vnc.html:220
+msgid "Port:"
+msgstr "Puesto"
+
+#: ../vnc.html:224
+msgid "Path:"
+msgstr "Ruta"
+
+#: ../vnc.html:231
+msgid "Automatic Reconnect"
+msgstr "Reconexión automática"
+
+#: ../vnc.html:234
+msgid "Reconnect Delay (ms):"
+msgstr "Retraso en la reconexión (ms)"
+
+#: ../vnc.html:239
+msgid "Show Dot when No Cursor"
+msgstr "Mostrar punto cuando no hay cursor"
+
+#: ../vnc.html:244
+msgid "Logging:"
+msgstr "Logging"
+
+#: ../vnc.html:253
+msgid "Version:"
+msgstr "Versión:"
+
+#: ../vnc.html:261
+msgid "Disconnect"
+msgstr "Desconectar"
+
+#: ../vnc.html:280
+msgid "Connect"
+msgstr "Conectar"
+
+#: ../vnc.html:290
+msgid "Username:"
+msgstr "Nombre de usuario:"
+
+#: ../vnc.html:294
+msgid "Password:"
+msgstr "Contraseña"
+
+#: ../vnc.html:298
+msgid "Send Credentials"
+msgstr "Enviar Credenciales"
+
+#: ../vnc.html:308
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Keys"
+msgstr "Llaves"
+
+msgid "Game Cursor Mode"
+msgstr "Modo de cursor de juego"
+
+msgid "Press Esc Key to Exit Pointer Lock Mode"
+msgstr "Presione la tecla Esc para salir del modo de bloqueo del puntero"
+
+msgid "Game Mode paused, click on screen to resume Game Mode."
+msgstr ""
+"Modo de juego en pausa, haga clic en la pantalla para reanudar el modo de "
+"juego"
+
+msgid "Clipboard Up"
+msgstr "Portapapeles arriba"
+
+#, fuzzy
+msgid "Clipboard Down"
+msgstr "Portapapeles abajo"
+
+msgid "Clipboard Seamless"
+msgstr "Portapapeles sin costuras"
+
+msgid "Prefer Local Cursor"
+msgstr "Preferir cursor local"
+
+msgid "Translate keyboard shortcuts"
+msgstr "Traducir atajos de teclado"
+
+msgid "Enable WebRTC UDP Transit"
+msgstr "Habilitar el tránsito UDP de WebRTC"
+
+msgid "Enable WebP Compression"
+msgstr "Habilitar compresión WebP"
+
+msgid "Enable Performance Stats"
+msgstr "Habilitar estadísticas de rendimiento"
+
+msgid "Enable Pointer Lock"
+msgstr "Habilitar bloqueo de puntero"
+
+msgid "IME Input Mode"
+msgstr "Modo de entrada IME"
+
+msgid "Show Virtual Keyboard Control"
+msgstr "Mostrar control de teclado virtual"
+
+msgid "Toggle Control Panel via Keystrokes"
+msgstr "Alternar panel de control a través de pulsaciones de teclas"
+
+msgid "Render Native Resolution"
+msgstr "Procesar resolución nativa"
+
+msgid "Keyboard Shortcuts"
+msgstr "Atajos de teclado"
+
+msgid "Enable KasmVNC Keyboard Shortcuts"
+msgstr "Habilitar atajos de teclado de KasmVNC"
+
+msgid "1 - Toggle Control Panel"
+msgstr "1 - Alternar panel de control"
+
+msgid "2 - Toggle Game Pointer Mode"
+msgstr "2 - Alternar modo de puntero de juego"
+
+msgid "3 - Toggle Pointer Lock"
+msgstr "3 - Alternar bloqueo de puntero"
+
+msgid "Stream Quality"
+msgstr "Calidad de transmisión"
+
+msgid "Preset Modes:"
+msgstr "Modos preestablecidos:"
+
+msgid "Static"
+msgstr "Estático"
+
+msgid "Low"
+msgstr "Bajo"
+
+msgid "Medium"
+msgstr "Medio"
+
+msgid "High"
+msgstr "Alto"
+
+msgid "Extreme"
+msgstr "Extremo"
+
+msgid "Lossless"
+msgstr "sin pérdidas"
+
+msgid "Custom"
+msgstr "Costumbre"
+
+msgid "Anti-Aliasing:"
+msgstr "Suavizado:"
+
+msgid "Auto Dynamic"
+msgstr "Auto Dinámica"
+
+msgid "Off"
+msgstr "Apagado"
+
+msgid "On"
+msgstr "En"
+
+msgid "Dynamic Quality Min:"
+msgstr "Calidad dinámica mínima:"
+
+msgid "Dynamic Quality Max:"
+msgstr "Calidad dinámica máxima:"
+
+msgid "Treat Lossless:"
+msgstr "Tratar sin pérdidas:"
+
+msgid "Frame Rate:"
+msgstr "Cuadros por segundo:"
+
+msgid "Video JPEG Quality:"
+msgstr "Calidad JPEG de vídeo:"
+
+msgid "Video WEBP Quality:"
+msgstr "Calidad WEBP del vídeo:"
+
+msgid "Video Area:"
+msgstr "Área de vídeo:"
+
+msgid "Video Time:"
+msgstr "Tiempo de vídeo:"
+
+msgid "Video Out Time:"
+msgstr "Tiempo de salida del vídeo:"
+
+msgid "Video Mode Width:"
+msgstr "Ancho del modo de vídeo:"
+
+msgid "Video Mode Height:"
+msgstr "Altura del modo de vídeo:"
+
+msgid "Documentation"
+msgstr "Documentación"
+
+msgid "Drag Viewport"
+msgstr "Arrastrar ventana gráfica"
+
+msgid "Displays"
+msgstr "Pantallas"
+
+msgid "Enable Threaded Decoding"
+msgstr "Habilitar decodificación por subprocesos"
+
+msgid "Arrange Displays"
+msgstr "Organizar pantallas"
+
+msgid ""
+"Drag and drop to arrange displays, new monitors are added to the right hand "
+"side of the previous monitor."
+msgstr ""
+"Arrastre y suelte para organizar las pantallas; los nuevos monitores se "
+"agregan al lado derecho del monitor anterior"
+
+msgid "Add Monitor"
+msgstr "Agregar monitor"
+
+msgid "Auto placement"
+msgstr "Colocación automática"
+
+msgid "Identify"
+msgstr "Identificar"
+
+msgid "Done"
+msgstr "Hecho"
+
+msgid "Control Panel"
+msgstr "Panel de control"
+
+#~ msgid "Password is required"
+#~ msgstr "Contraseña es obligatoria"
+
+#~ msgid "Disconnect timeout"
+#~ msgstr "Tiempo de desconexión agotado"
+
+#~ msgid "viewport drag"
+#~ msgstr "Arrastrar la ventana"
+
+#~ msgid "Active Mouse Button"
+#~ msgstr "Botón activo del ratón"
+
+#~ msgid "No mousebutton"
+#~ msgstr "Ningún botón del ratón"
+
+#~ msgid "Left mousebutton"
+#~ msgstr "Botón izquierdo del ratón"
+
+#~ msgid "Middle mousebutton"
+#~ msgstr "Botón central del ratón"
+
+#~ msgid "Right mousebutton"
+#~ msgstr "Botón derecho del ratón"
+
+#~ msgid "Local Downscaling"
+#~ msgstr "Reducción de escala local"
+
+#~ msgid "Local Cursor"
+#~ msgstr "Cursor Local"
+
+#~ msgid "Canvas not supported."
+#~ msgstr "Canvas no está soportado"

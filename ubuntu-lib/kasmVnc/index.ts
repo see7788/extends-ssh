@@ -16,10 +16,24 @@ export default class extends Base {
 
   // 官方 KasmVNC 集成仓库：https://github.com/kasmtech/KasmVNC
   // 官方 kasmweb 前端子模块（Kasm 维护的 noVNC fork）：https://github.com/kasmtech/noVNC
-  vitePlugin(): Plugin {
+  vitePlugin_kasm(): Plugin {
     let outputDirectory!: string;
     return {
-      name: "kasmVncPlugin",
+      name: "vitePlugin_kasm",
+      enforce: "post",
+      configResolved: config => {
+        outputDirectory = path.resolve(config.root, config.build.outDir);
+      },
+      closeBundle: async () => {
+        await new Sftp().upload(outputDirectory, store.getState().kasmVnc.server.httpdDirectory);
+      },
+    };
+  }
+  
+  vitePlugin_chromium(index:number): Plugin {
+    let outputDirectory!: string;
+    return {
+      name: "vitePlugin_chromium",
       enforce: "post",
       configResolved: config => {
         outputDirectory = path.resolve(config.root, config.build.outDir);
@@ -235,22 +249,22 @@ fi
 command -v vncserver >/dev/null 2>&1
 `);
 
-      const encodedTarget = Buffer.from(chromium.url, "utf8").toString("base64");
-      const chromiumOptions = [
-        chromium.noSandbox ? "--no-sandbox" : "",
-        chromium.disableDevShmUsage ? "--disable-dev-shm-usage" : "",
-        chromium.disableGpu ? "--disable-gpu" : "",
-        chromium.noFirstRun ? "--no-first-run" : "",
-        chromium.noDefaultBrowserCheck ? "--no-default-browser-check" : "",
-        chromium.kiosk ? "--kiosk" : "",
-      ].filter(option => option).join(" ");
-      const targetArgument = chromium.appMode ? '--app="$target"' : '"$target"';
-      const targetSetup = `
+    const encodedTarget = Buffer.from(chromium.url, "utf8").toString("base64");
+    const chromiumOptions = [
+      chromium.noSandbox ? "--no-sandbox" : "",
+      chromium.disableDevShmUsage ? "--disable-dev-shm-usage" : "",
+      chromium.disableGpu ? "--disable-gpu" : "",
+      chromium.noFirstRun ? "--no-first-run" : "",
+      chromium.noDefaultBrowserCheck ? "--no-default-browser-check" : "",
+      chromium.kiosk ? "--kiosk" : "",
+    ].filter(option => option).join(" ");
+    const targetArgument = chromium.appMode ? '--app="$target"' : '"$target"';
+    const targetSetup = `
 printf %s ${ssh.quoteShellArg(encodedTarget)} | base64 -d > ${ssh.quoteShellArg(targetFile)}
  chmod 644 ${ssh.quoteShellArg(targetFile)}`;
     const applicationLaunch = `target=$(cat ${targetFile})
 exec ${chromiumBinary} ${chromiumOptions} --user-data-dir=${chromiumDataDir} ${targetArgument} >${home}/.vnc/chromium.log 2>&1`
-      const windowManager = `openbox-session >${home}/.vnc/openbox.log 2>&1 &
+    const windowManager = `openbox-session >${home}/.vnc/openbox.log 2>&1 &
  sleep 1`;
     const targetDirectory = targetFile.substring(0, targetFile.lastIndexOf("/"));
     await ssh.execute(`

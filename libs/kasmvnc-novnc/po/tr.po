@@ -1,0 +1,499 @@
+# Turkish translations for noVNC package
+# Turkish translation for noVNC.
+# Copyright (C) 2018 The noVNC Authors
+# This file is distributed under the same license as the noVNC package.
+# Ömer ÇAKMAK <farukomercakmak@gmail.com>, 2018.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: noVNC 0.6.1\n"
+"Report-Msgid-Bugs-To: novnc@googlegroups.com\n"
+"POT-Creation-Date: 2020-07-03 16:11+0200\n"
+"PO-Revision-Date: 2018-01-05 19:07+0300\n"
+"Last-Translator: Ömer ÇAKMAK <farukomercakmak@gmail.com>\n"
+"Language-Team: Türkçe <gnome-turk@gnome.org>\n"
+"Language: tr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: Gtranslator 2.91.7\n"
+
+#: ../app/ui.js:394
+msgid "Connecting..."
+msgstr "Bağlanıyor..."
+
+#: ../app/ui.js:401
+msgid "Disconnecting..."
+msgstr "Bağlantı kesiliyor..."
+
+#: ../app/ui.js:407
+msgid "Reconnecting..."
+msgstr "Yeniden bağlantı kuruluyor..."
+
+#: ../app/ui.js:412
+msgid "Internal error"
+msgstr "İç hata"
+
+#: ../app/ui.js:1008
+msgid "Must set host"
+msgstr "Sunucuyu kur"
+
+#: ../app/ui.js:1090
+msgid "Connected (encrypted) to "
+msgstr "Bağlı (şifrelenmiş)"
+
+#: ../app/ui.js:1092
+msgid "Connected (unencrypted) to "
+msgstr "Bağlandı (şifrelenmemiş)"
+
+#: ../app/ui.js:1115
+msgid "Something went wrong, connection is closed"
+msgstr "Bir şeyler ters gitti, bağlantı kesildi"
+
+#: ../app/ui.js:1118
+msgid "Failed to connect to server"
+msgstr "Sunucuyla bağlantı başarısız"
+
+#: ../app/ui.js:1128
+msgid "Disconnected"
+msgstr "Bağlantı kesildi"
+
+#: ../app/ui.js:1143
+msgid "New connection has been rejected with reason: "
+msgstr "Bağlantı aşağıdaki nedenlerden dolayı reddedildi: "
+
+#: ../app/ui.js:1146
+msgid "New connection has been rejected"
+msgstr "Bağlantı reddedildi"
+
+#: ../app/ui.js:1181
+msgid "Credentials are required"
+msgstr "Kimlik bilgileri gerekli"
+
+#: ../vnc.html:74
+msgid "KasmVNC encountered an error:"
+msgstr "KasmVNC bir hatayla karşılaştı:"
+
+#: ../vnc.html:84
+msgid "Hide/Show the control bar"
+msgstr "Denetim masasını Gizle/Göster"
+
+#: ../vnc.html:91
+msgid "Drag"
+msgstr "Sürüklemek"
+
+#: ../vnc.html:91
+msgid "Move/Drag Viewport"
+msgstr "Görünümü Taşı/Sürükle"
+
+#: ../vnc.html:97
+msgid "Keyboard"
+msgstr "Klavye"
+
+#: ../vnc.html:97
+msgid "Show Keyboard"
+msgstr "Klavye Düzenini Göster"
+
+#: ../vnc.html:102
+msgid "Extra keys"
+msgstr "Ekstra tuşlar"
+
+#: ../vnc.html:102
+msgid "Show Extra Keys"
+msgstr "Ekstra tuşları göster"
+
+#: ../vnc.html:107
+msgid "Ctrl"
+msgstr "Ctrl"
+
+#: ../vnc.html:107
+msgid "Toggle Ctrl"
+msgstr "Ctrl Değiştir "
+
+#: ../vnc.html:110
+msgid "Alt"
+msgstr "Alt"
+
+#: ../vnc.html:110
+msgid "Toggle Alt"
+msgstr "Alt Değiştir"
+
+#: ../vnc.html:113
+msgid "Toggle Windows"
+msgstr "Windows'u Değiştir"
+
+#: ../vnc.html:113
+msgid "Windows"
+msgstr "Pencereler"
+
+#: ../vnc.html:116
+msgid "Send Tab"
+msgstr "Sekme Gönder"
+
+#: ../vnc.html:116
+msgid "Tab"
+msgstr "Sekme"
+
+#: ../vnc.html:119
+msgid "Esc"
+msgstr "Esc"
+
+#: ../vnc.html:119
+msgid "Send Escape"
+msgstr "Boşluk Gönder"
+
+#: ../vnc.html:122
+msgid "Ctrl+Alt+Del"
+msgstr "Ctrl + Alt + Del"
+
+#: ../vnc.html:122
+msgid "Send Ctrl-Alt-Del"
+msgstr "Ctrl-Alt-Del Gönder"
+
+#: ../vnc.html:129
+msgid "Shutdown/Reboot"
+msgstr "Kapat/Yeniden Başlat"
+
+#: ../vnc.html:129
+msgid "Shutdown/Reboot..."
+msgstr "Kapat/Yeniden Başlat..."
+
+#: ../vnc.html:135
+msgid "Power"
+msgstr "Güç"
+
+#: ../vnc.html:137
+msgid "Shutdown"
+msgstr "Kapat"
+
+#: ../vnc.html:138
+msgid "Reboot"
+msgstr "Yeniden Başlat"
+
+#: ../vnc.html:139
+msgid "Reset"
+msgstr "Sıfırla"
+
+#: ../vnc.html:144 ../vnc.html:150
+msgid "Clipboard"
+msgstr "Pano"
+
+#: ../vnc.html:154
+msgid "Clear"
+msgstr "Temizle"
+
+#: ../vnc.html:160
+msgid "Fullscreen"
+msgstr "Tam Ekran"
+
+#: ../vnc.html:165 ../vnc.html:172
+msgid "Settings"
+msgstr "Ayarlar"
+
+#: ../vnc.html:175
+msgid "Shared Mode"
+msgstr "Paylaşım Modu"
+
+#: ../vnc.html:178
+msgid "View Only"
+msgstr "Sadece Görüntüle"
+
+#: ../vnc.html:182
+msgid "Clip to Window"
+msgstr "Pencereye Tıkla"
+
+#: ../vnc.html:185
+msgid "Scaling Mode:"
+msgstr "Ölçekleme Modu:"
+
+#: ../vnc.html:187
+msgid "None"
+msgstr "Bilinmeyen"
+
+#: ../vnc.html:188
+msgid "Local Scaling"
+msgstr "Yerel Ölçeklendirme"
+
+#: ../vnc.html:189
+msgid "Remote Resizing"
+msgstr "Uzaktan Yeniden Boyutlandırma"
+
+#: ../vnc.html:194
+msgid "Advanced"
+msgstr "Gelişmiş"
+
+#: ../vnc.html:197
+msgid "Quality:"
+msgstr "Kalite:"
+
+#: ../vnc.html:201
+msgid "Compression level:"
+msgstr "Sıkıştırma seviyesi:"
+
+#: ../vnc.html:206
+msgid "Repeater ID:"
+msgstr "Tekralayıcı ID:"
+
+#: ../vnc.html:210
+msgid "WebSocket"
+msgstr "WebSocket"
+
+#: ../vnc.html:213
+msgid "Encrypt"
+msgstr "Şifrele"
+
+#: ../vnc.html:216
+msgid "Host:"
+msgstr "Ana makine:"
+
+#: ../vnc.html:220
+msgid "Port:"
+msgstr "Port:"
+
+#: ../vnc.html:224
+msgid "Path:"
+msgstr "Yol:"
+
+#: ../vnc.html:231
+msgid "Automatic Reconnect"
+msgstr "Otomatik Yeniden Bağlan"
+
+#: ../vnc.html:234
+msgid "Reconnect Delay (ms):"
+msgstr "Yeniden Bağlanma Süreci (ms):"
+
+#: ../vnc.html:239
+msgid "Show Dot when No Cursor"
+msgstr "İmleç Yokken Noktayı Göster"
+
+#: ../vnc.html:244
+msgid "Logging:"
+msgstr "Giriş yapılıyor:"
+
+#: ../vnc.html:253
+msgid "Version:"
+msgstr "Sürüm:"
+
+#: ../vnc.html:261
+msgid "Disconnect"
+msgstr "Bağlantıyı Kes"
+
+#: ../vnc.html:280
+msgid "Connect"
+msgstr "Bağlan"
+
+#: ../vnc.html:290
+msgid "Username:"
+msgstr "Kullanıcı adı:"
+
+#: ../vnc.html:294
+msgid "Password:"
+msgstr "Parola:"
+
+#: ../vnc.html:298
+msgid "Send Credentials"
+msgstr "Kimlik Bilgilerini Gönder"
+
+#: ../vnc.html:308
+msgid "Cancel"
+msgstr "Vazgeç"
+
+msgid "Keys"
+msgstr "Anahtarlar"
+
+msgid "Game Cursor Mode"
+msgstr "Oyun İmleç Modu"
+
+msgid "Press Esc Key to Exit Pointer Lock Mode"
+msgstr "İşaretçi Kilidi Modundan Çıkmak için Esc Tuşuna Basın"
+
+msgid "Game Mode paused, click on screen to resume Game Mode."
+msgstr "Oyun Modu duraklatıldı, Oyun Moduna devam etmek için ekrana tıklayın."
+
+msgid "Clipboard Up"
+msgstr "Pano Yukarı"
+
+msgid "Clipboard Down"
+msgstr "Pano Aşağı"
+
+msgid "Clipboard Seamless"
+msgstr "Pano Sorunsuz"
+
+msgid "Prefer Local Cursor"
+msgstr "Yerel İmleci Tercih Et"
+
+msgid "Translate keyboard shortcuts"
+msgstr "Klavye kısayollarını çevir"
+
+msgid "Enable WebRTC UDP Transit"
+msgstr "WebRTC UDP Geçişini Etkinleştir"
+
+msgid "Enable WebP Compression"
+msgstr "WebP Sıkıştırmasını Etkinleştir"
+
+msgid "Enable Performance Stats"
+msgstr "Performans İstatistiklerini Etkinleştir"
+
+msgid "Enable Pointer Lock"
+msgstr "İşaretçi Kilidini Etkinleştir"
+
+msgid "IME Input Mode"
+msgstr "IME Giriş Modu"
+
+msgid "Show Virtual Keyboard Control"
+msgstr "Sanal Klavye Denetimini Göster"
+
+msgid "Toggle Control Panel via Keystrokes"
+msgstr "Kontrol Panelini Tuş Vuruşlarıyla Değiştir"
+
+msgid "Render Native Resolution"
+msgstr "Yerel Çözünürlüğü Oluştur"
+
+msgid "Keyboard Shortcuts"
+msgstr "Klavye kısayolları"
+
+msgid "Enable KasmVNC Keyboard Shortcuts"
+msgstr "KasmVNC Klavye Kısayollarını Etkinleştir"
+
+msgid "1 - Toggle Control Panel"
+msgstr "1 - Kontrol Panelini Değiştir"
+
+msgid "2 - Toggle Game Pointer Mode"
+msgstr "2 - Oyun İşaretçisi Modunu Değiştir"
+
+msgid "3 - Toggle Pointer Lock"
+msgstr "3 - İşaretçi Kilidini Değiştir"
+
+msgid "Stream Quality"
+msgstr "Akış Kalitesi"
+
+msgid "Preset Modes:"
+msgstr "Ön Ayarlı Modlar:"
+
+msgid "Static"
+msgstr "Statik"
+
+msgid "Low"
+msgstr "Düşük"
+
+msgid "Medium"
+msgstr "Orta"
+
+msgid "High"
+msgstr "Yüksek"
+
+msgid "Extreme"
+msgstr "Aşırı"
+
+msgid "Lossless"
+msgstr "kayıpsız"
+
+msgid "Custom"
+msgstr "Gelenek"
+
+msgid "Anti-Aliasing:"
+msgstr "Kenar Yumuşatma:"
+
+msgid "Auto Dynamic"
+msgstr "Otomatik Dinamik"
+
+msgid "Off"
+msgstr "Kapalı"
+
+msgid "On"
+msgstr "Açık"
+
+msgid "Dynamic Quality Min:"
+msgstr "Dinamik Kalite Min:"
+
+msgid "Dynamic Quality Max:"
+msgstr "Dinamik Kalite Maks:"
+
+msgid "Treat Lossless:"
+msgstr "Kayıpsız Tedavi Et:"
+
+msgid "Frame Rate:"
+msgstr "Kare hızı:"
+
+msgid "Video JPEG Quality:"
+msgstr "Video JPEG Kalitesi:"
+
+msgid "Video WEBP Quality:"
+msgstr "Video WEBP Kalitesi:"
+
+msgid "Video Area:"
+msgstr "Video Alanı:"
+
+msgid "Video Time:"
+msgstr "Video Süresi:"
+
+msgid "Video Out Time:"
+msgstr "Video Çıkış Süresi:"
+
+msgid "Video Mode Width:"
+msgstr "Video Modu Genişliği:"
+
+msgid "Video Mode Height:"
+msgstr "Video Modu Yüksekliği:"
+
+msgid "Documentation"
+msgstr "Belgeler"
+
+msgid "Drag Viewport"
+msgstr "Görüntü Penceresini Sürükleyin"
+
+msgid "Displays"
+msgstr "Ekranlar"
+
+msgid "Enable Threaded Decoding"
+msgstr "Dişli Kod Çözmeyi Etkinleştir"
+
+msgid "Arrange Displays"
+msgstr "Göstergeleri Düzenle"
+
+msgid ""
+"Drag and drop to arrange displays, new monitors are added to the right hand "
+"side of the previous monitor."
+msgstr ""
+"Ekranları düzenlemek için sürükleyip bırakın, yeni monitörler önceki "
+"monitörün sağ tarafına eklenir."
+
+msgid "Add Monitor"
+msgstr "Monitör Ekle"
+
+msgid "Auto placement"
+msgstr "Otomatik yerleştirme"
+
+msgid "Identify"
+msgstr "Tanımlamak"
+
+msgid "Done"
+msgstr "Tamamlamak"
+
+msgid "Control Panel"
+msgstr "Kontrol Paneli"
+
+#~ msgid "Password is required"
+#~ msgstr "Şifre gerekli"
+
+#~ msgid "viewport drag"
+#~ msgstr "Görüntü penceresini sürükle"
+
+#~ msgid "Active Mouse Button"
+#~ msgstr "Aktif Fare Düğmesi"
+
+#~ msgid "No mousebutton"
+#~ msgstr "Fare düğmesi yok"
+
+#~ msgid "Left mousebutton"
+#~ msgstr "Farenin sol düğmesi"
+
+#~ msgid "Middle mousebutton"
+#~ msgstr "Farenin orta düğmesi"
+
+#~ msgid "Right mousebutton"
+#~ msgstr "Farenin sağ düğmesi"
+
+#~ msgid "Canvas not supported."
+#~ msgstr "Tuval desteklenmiyor."

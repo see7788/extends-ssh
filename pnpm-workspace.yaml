@@ -1,5 +1,6 @@
 packages:
   - "ubuntu-lib"
+  - "libs/kasmvnc-novnc"
   - "../extends-mcp/libs/mcpserver"
   - "../extends-mcp/libs/user-response-templates-mcpserver"
   - "../extends-zustand/libs/zustand-lib"
