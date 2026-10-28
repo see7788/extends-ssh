@@ -1,7 +1,7 @@
 ﻿import { mkdir, writeFile as fsWriteFile } from "node:fs/promises";
 import path from "node:path";
 import type { Plugin } from "vite";
-import store from "../store/index.ts";
+import store from "../store.ts";
 import merge from "lodash/merge";
 export default class {
   constructor(private readonly devPort: number) { }

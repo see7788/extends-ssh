@@ -6,15 +6,6 @@ import Ssh from "../ssh/index.ts";
 import Vite from "../vite/index.ts";
 import type { Plugin } from "vite";
 
-type Pm2Process = {
-  readonly name: string;
-  hasRemote(): Promise<boolean>;
-  refresh(): Promise<"missing" | "stopped" | "running">;
-  stop(): Promise<void>;
-  restart(): Promise<void>;
-  close(): Promise<void>;
-};
-
 export default class extends Base {
   vitePlugin(
     port: number,
@@ -47,7 +38,7 @@ export default class extends Base {
     await nodejs.setupReady();
     await ssh.execute("set -e; if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi; pm2 ping >/dev/null; pm2 save --force >/dev/null");
   }
-  async getRemote(port: number): Promise<Pm2Process> {
+  async getRemote(port: number): Promise<{ readonly name: string; hasRemote(): Promise<boolean>; refresh(): Promise<"missing" | "stopped" | "running">; stop(): Promise<void>; restart(): Promise<void>; close(): Promise<void>; }> {
     await this.setupReady();
     if (!await this.hasRemote(port)) {
       throw new Error(`开发端口尚未分配 PM2 进程: ${port}`);
@@ -66,11 +57,10 @@ export default class extends Base {
     cwd: string;
     command: string;
     environment?: Record<string, string>;
-  }): Promise<Pm2Process> {
+  }): Promise<{ readonly name: string; hasRemote(): Promise<boolean>; refresh(): Promise<"missing" | "stopped" | "running">; stop(): Promise<void>; restart(): Promise<void>; close(): Promise<void>; }> {
     await this.setupReady();
     const ssh = new Ssh();
-    const current = await this.refresh(input.port);
-    if (current !== "running" && await this.remotePortIsListening(input.port)) {
+    if (await this.refresh(input.port) !== "running" && await this.remotePortIsListening(input.port)) {
       throw new Error(`开发端口已被其他远程服务占用: ${input.port}`);
     }
     const name = String(input.port);
@@ -100,6 +90,7 @@ pm2 save --force >/dev/null`);
     return status === "online" ? "running" : item ? "stopped" : "missing";
   }
   async hasRemote(port: number): Promise<boolean> {
+    await this.setupReady();
     const ssh = new Ssh();
     const result = await ssh.execute(`if command -v pm2 >/dev/null 2>&1 && pm2 describe ${ssh.quoteShellArg(String(port))} >/dev/null 2>&1; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";

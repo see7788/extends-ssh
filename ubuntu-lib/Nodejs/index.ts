@@ -1,5 +1,5 @@
 ﻿import Base from "../public/index.ts";
-import store from "../store/index.ts";
+import store from "../store.ts";
 import Ssh from "../ssh/index.ts";
 
 export default class extends Base {

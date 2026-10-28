@@ -1,7 +1,6 @@
 ﻿import mcpserver from "mcpserver";
 import StunServer from "./index.ts";
 
-const stunServer = new StunServer();
 
 export default mcpserver.metas("/stunServer")
   .add({
@@ -11,7 +10,7 @@ export default mcpserver.metas("/stunServer")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async () => {
-      await stunServer.setupReady();
+      await new StunServer().setupReady();
       return { ready: true };
     },
   })
@@ -22,7 +21,7 @@ export default mcpserver.metas("/stunServer")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     handler: async () => {
-      await stunServer.update();
+      await new StunServer().update();
       return { updated: true };
     },
   });

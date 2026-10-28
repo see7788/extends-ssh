@@ -1,47 +1,46 @@
 ﻿import mcpserver from "mcpserver";
-import ChromiumServer from "./index.ts";
+import KasmVnc from "./index.ts";
 import { indexInputValidator } from "./zod.ts";
 
-const chromiumServer = new ChromiumServer();
 
-export default mcpserver.metas("/chromiumServer")
+export default mcpserver.metas("/kasmVnc")
   .add({
     protocol: "tool",
     path: "/setup",
-    description: "Ensure one Chromium instance is running.",
-    schema: {},
+    description: "Ensure one KasmVNC instance is running.",
+    schema: indexInputValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async () => { await chromiumServer.setup(); return { ready: true }; },
+    handler: async input => { await new KasmVnc(input.index).setupReady(); return { ready: true }; },
   })
   .add({
     protocol: "tool",
     path: "/set",
-    description: "Apply the stored configuration for one Chromium instance.",
+    description: "Apply the stored configuration for one KasmVNC instance.",
     schema: indexInputValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => { await chromiumServer.set(input.index); return { updated: true }; },
+    handler: async input => { await new KasmVnc(input.index).set(); return { updated: true }; },
   })
   .add({
     protocol: "tool",
     path: "/add",
-    description: "Start one Chromium instance using its stored configuration.",
+    description: "Start one KasmVNC instance using its stored configuration.",
     schema: indexInputValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => { await chromiumServer.add(input.index); return { added: true }; },
+    handler: async input => { await new KasmVnc(input.index).add(); return { added: true }; },
   })
   .add({
     protocol: "tool",
     path: "/stop",
-    description: "Stop one Chromium instance without deleting its configuration.",
+    description: "Stop one KasmVNC instance without deleting its configuration.",
     schema: indexInputValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => { await chromiumServer.stop(input.index); return { stopped: true }; },
+    handler: async input => { await new KasmVnc().stop(input.index); return { stopped: true }; },
   })
   .add({
     protocol: "tool",
     path: "/del",
-    description: "Remove one Chromium instance and its remote service.",
+    description: "Remove one KasmVNC instance and its remote service.",
     schema: indexInputValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
-    handler: async input => { await chromiumServer.del(input.index); return { deleted: true }; },
+    handler: async input => { await new KasmVnc().del(input.index); return { deleted: true }; },
   });

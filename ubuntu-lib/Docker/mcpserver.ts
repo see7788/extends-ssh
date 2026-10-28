@@ -1,7 +1,6 @@
 ﻿import mcpserver from "mcpserver";
 import Docker from "./index.ts";
 
-const docker = new Docker();
 
 export default mcpserver.metas("/docker").add({
   protocol: "tool",
@@ -10,7 +9,7 @@ export default mcpserver.metas("/docker").add({
   schema: {},
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   handler: async () => {
-    await docker.setupReady();
+    await new Docker().setupReady();
     return { ready: true };
   },
 })

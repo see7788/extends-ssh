@@ -2,7 +2,7 @@
 // import { mkdir, writeFile } from "node:fs/promises";
 // import path from "node:path";
 // import type { Plugin } from "vite";
-// import store from "../store/index.ts";
+// import store from "../store.ts";
 // import Peerjs from "../peerjs/index.ts";
 // import Pm2 from "../pm2/index.ts";
 // import Sftp from "../sftp/index.ts";

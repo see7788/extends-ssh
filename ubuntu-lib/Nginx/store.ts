@@ -1,14 +1,16 @@
 ﻿import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 
-type NginxState = {
+const nginxStore: ImmerStateCreator<{
   nginx: {
-    root: string;
+    root: "/www/server/panel/vhost/nginx";
+    binary: "/www/server/nginx/sbin/nginx";
+    config: "/www/server/nginx/conf/nginx.conf";
   };
-};
-
-const nginxStore: ImmerStateCreator<NginxState> = () => ({
+}> = () => ({
   nginx: {
     root: "/www/server/panel/vhost/nginx",
+    binary: "/www/server/nginx/sbin/nginx",
+    config: "/www/server/nginx/conf/nginx.conf",
   },
 });
 

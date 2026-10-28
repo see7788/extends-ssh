@@ -1,12 +1,7 @@
 ﻿import Base from "../public/index.ts";
 import { hostnameValidator } from "./zod.ts";
 import Ssh from "../ssh/index.ts";
-import store from "../store/index.ts";
-
-type CertificateFiles = {
-  readonly certPath: string;
-  readonly keyPath: string;
-};
+import store from "../store.ts";
 
 export default class extends Base {
   protected async setup(): Promise<void> {
@@ -18,7 +13,7 @@ if ! command -v openssl >/dev/null 2>&1; then
 fi
 openssl version >/dev/null`);
   }
-  async makeRemote(hostname: string): Promise<CertificateFiles> {
+  async makeRemote(hostname: string): Promise<{ readonly certPath: string; readonly keyPath: string; }> {
     await this.setupReady();
     const ssh = new Ssh();
     const base = `${store.getState().certificate.root}/${hostname}`;

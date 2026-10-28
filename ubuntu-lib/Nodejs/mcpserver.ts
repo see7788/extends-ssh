@@ -1,7 +1,6 @@
 ﻿import mcpserver from "mcpserver";
 import Nodejs from "./index.ts";
 
-const nodejs = new Nodejs();
 
 export default mcpserver.metas("/nodejs").add({
   protocol: "tool",
@@ -10,7 +9,7 @@ export default mcpserver.metas("/nodejs").add({
   schema: {},
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   handler: async () => {
-    await nodejs.setupReady();
+    await new Nodejs().setupReady();
     return { ready: true };
   },
 })

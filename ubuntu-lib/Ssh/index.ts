@@ -1,19 +1,7 @@
 ﻿import Base from "../public/index.ts";
 import { NodeSSH, type SSHExecCommandResponse } from "node-ssh";
-import store from "../store/index.ts";
+import store from "../store.ts";
 
-type PortListener = {
-  protocol: "tcp" | "udp";
-  address: string;
-  port: number;
-  pid?: number;
-  process?: string;
-  path?: string;
-};
-type PortState = {
-  occupied: boolean;
-  listeners: PortListener[];
-};
 export default class extends Base {
   private readonly client = new NodeSSH();
   private connectPromise?: Promise<void>;
@@ -45,7 +33,7 @@ export default class extends Base {
   }
 
   async execute(command: string): Promise<SSHExecCommandResponse> {
-    await this.connectionReady();
+    await this.setupReady();
     const execution = await this.client.execCommand(command);
     if (execution.code !== 0) {
       throw new Error(
@@ -56,16 +44,26 @@ export default class extends Base {
   }
 
   async putDirectory(...options: Parameters<NodeSSH["putDirectory"]>): Promise<Awaited<ReturnType<NodeSSH["putDirectory"]>>> {
-    await this.connectionReady();
+    await this.setupReady();
     return this.client.putDirectory(...options);
   }
 
   async forwardIn(...options: Parameters<NodeSSH["forwardIn"]>): Promise<Awaited<ReturnType<NodeSSH["forwardIn"]>>> {
-    await this.connectionReady();
+    await this.setupReady();
     return this.client.forwardIn(...options);
   }
 
-  async hasPort(port: number): Promise<PortState> {
+  async hasPort(port: number): Promise<{
+    occupied: boolean;
+    listeners: Array<{
+      protocol: "tcp" | "udp";
+      address: string;
+      port: number;
+      pid?: number;
+      process?: string;
+      path?: string;
+    }>;
+  }> {
     const result = await this.execute(`
 set +e
 ss -H -ltnp | awk \\$4 ~ /(^|:)${port}\\$/ { print "tcp\t" \\$0 }
@@ -79,8 +77,15 @@ ss -H -lunp | awk \\$4 ~ /(^|:)${port}\\$/ { print "udp\t" \\$0 }
         const local = parts[4];
         const processInfo = parts.slice(6).join(" ");
         const processMatch = processInfo.match(/users:\(\("([^"]+)",pid=(\d+)/);
-        const listener: PortListener = {
-          protocol: parts[0],
+        const listener: {
+          protocol: "tcp" | "udp";
+          address: string;
+          port: number;
+          pid?: number;
+          process?: string;
+          path?: string;
+        } = {
+          protocol: parts[0] as "tcp" | "udp",
           address: local.slice(0, -(String(port).length + 1)),
           port,
           pid: processMatch ? Number(processMatch[2]) : undefined,
@@ -88,7 +93,14 @@ ss -H -lunp | awk \\$4 ~ /(^|:)${port}\\$/ { print "udp\t" \\$0 }
         };
         return listener;
       })
-      .filter((listener): listener is PortListener => listener !== undefined);
+      .filter((listener): listener is {
+        protocol: "tcp" | "udp";
+        address: string;
+        port: number;
+        pid?: number;
+        process?: string;
+        path?: string;
+      } => listener !== undefined);
     await Promise.all(listeners.map(async listener => {
       if (listener.pid === undefined) return;
       const process = await this.execute(`

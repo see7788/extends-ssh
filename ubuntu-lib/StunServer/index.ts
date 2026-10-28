@@ -3,7 +3,7 @@ import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
 import Docker from "../docker/index.ts";
 import Ssh from "../ssh/index.ts";
-import store from "../store/index.ts";
+import store from "../store.ts";
 
 export default class extends Base {
   get port(): number {
@@ -25,11 +25,10 @@ export default class extends Base {
     if (stunServer.port === sshPort || stunServer.port === 80 || stunServer.port === 443) {
       throw new Error(`STUN 端口与固定服务端口冲突: ${String(stunServer.port)}`);
     }
-    const state = { host, port: stunServer.port };
     await docker.setupReady();
-    const occupancy = await ssh.execute(`if docker inspect ${container} >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' ${container})" = true ]; then printf own; elif ss -ltnH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }' || ss -lunH | awk '$4 ~ /(^|:)${state.port}$/ { found=1 } END { exit !found }'; then printf occupied; else printf free; fi`);
+    const occupancy = await ssh.execute(`if docker inspect ${container} >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' ${container})" = true ]; then printf own; elif ss -ltnH | awk '$4 ~ /(^|:)${stunServer.port}$/ { found=1 } END { exit !found }' || ss -lunH | awk '$4 ~ /(^|:)${stunServer.port}$/ { found=1 } END { exit !found }'; then printf occupied; else printf free; fi`);
     if (occupancy.stdout.trim() === "occupied") {
-      throw new Error(`STUN 端口已被远程服务占用: ${String(state.port)}`);
+      throw new Error(`STUN 端口已被远程服务占用: ${String(stunServer.port)}`);
     }
     await ssh.execute(`
 set -e
@@ -39,20 +38,21 @@ if docker inspect ${container} >/dev/null 2>&1; then
 else
   docker pull ${image}
   docker run -d --restart=${restartPolicy} --name ${container} \
-    -p ${state.port}:${state.port}/tcp \
-    -p ${state.port}:${state.port}/udp \
-    ${image} --${mode} --listening-port=${state.port}
+    -p ${stunServer.port}:${stunServer.port}/tcp \
+    -p ${stunServer.port}:${stunServer.port}/udp \
+    ${image} --${mode} --listening-port=${stunServer.port}
 fi
-ufw allow ${state.port}/tcp >/dev/null
-ufw allow ${state.port}/udp >/dev/null
+ufw allow ${stunServer.port}/tcp >/dev/null
+ufw allow ${stunServer.port}/udp >/dev/null
 ufw reload >/dev/null
 test "$(docker inspect -f '{{.State.Running}}' ${container})" = true
-ss -lun | grep -Eq ':${state.port}[[:space:]]'
+ss -lun | grep -Eq ':${stunServer.port}[[:space:]]'
 `);
-    await this.bindingRequest(state.host, state.port);
+    await this.bindingRequest(host, stunServer.port);
   }
 
   async update(): Promise<void> {
+    await this.setupReady();
     const ssh = new Ssh();
     const { stunServer } = store.getState();
     const { host, port: sshPort } = await ssh.config();

@@ -2,11 +2,11 @@
 
 const stunServerStore: ImmerStateCreator<{
   stunServer: {
-    port: number;
-    containerName: string;
-    image: string;
-    restartPolicy: string;
-    mode: "stun-only";
+    port: number; // STUN 服务监听端口
+    containerName: string; // Docker 容器名称
+    image: string; // coturn Docker 镜像
+    restartPolicy: "no" | "always" | "unless-stopped" | "on-failure" | `on-failure:${number}`; // Docker 容器重启策略
+    mode: string; // coturn 运行模式
   };
 }> = () => ({
   stunServer: {

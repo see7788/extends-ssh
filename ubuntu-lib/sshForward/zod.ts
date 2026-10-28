@@ -1,4 +1,3 @@
 ﻿import { z } from "zod";
 
-const devPortValidator = z.number().int().min(1).max(65_535);
-export const inputValidator = z.object({ port: devPortValidator }).strict();
+export const inputValidator = z.object({ port: z.number().int().min(1).max(65_535) }).strict();

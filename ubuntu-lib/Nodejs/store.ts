@@ -3,7 +3,7 @@
 
 const nodejsStore: ImmerStateCreator<{
   nodejs: {
-    root: string;
+    root: "/opt/node-v22.23.2-linux-x64";
     version: string;
     architecture: string;
     sha256: string;

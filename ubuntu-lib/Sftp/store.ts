@@ -3,7 +3,7 @@
 
 const sftpStore: ImmerStateCreator<{
   sftp: {
-    remoteRoot: string;
+    remoteRoot: "/www/wwwroot/extends-ssh";
   };
 }> = () => ({
   sftp: {

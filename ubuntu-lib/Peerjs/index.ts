@@ -2,7 +2,7 @@
 import Docker from "../docker/index.ts";
 import Ssh from "../ssh/index.ts";
 import StunServer from "../stunServer/index.ts";
-import store from "../store/index.ts";
+import store from "../store.ts";
 import Vite from "../vite/index.ts";
 import type { PeerOptions } from "peerjs";
 import type { Plugin } from "vite";

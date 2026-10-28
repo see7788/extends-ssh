@@ -2,34 +2,28 @@
 import Certificate from "../certificate/index.ts";
 import { posix } from "node:path";
 import Ssh from "../ssh/index.ts";
-import store from "../store/index.ts";
+import store from "../store.ts";
 
-type NginxService = "sftp" | "pm2" | "sshForward";
-
-type NginxRoute = {
-  readonly url: string;
-  hasRemote(): Promise<boolean>;
-  close(): Promise<void>;
-};
 export default class extends Base {
   constructor(
-    private readonly service: NginxService,
-    private readonly input: number | `${string}/${number}`,
+    private readonly service: "sftp" | "pm2" | "sshForward",
+    private readonly input: number | `${string}/${number}` | `/www/wwwroot/extends-ssh/${number}`,
   ) {
     super();
   }
   protected async setup(): Promise<void> {
     const ssh = new Ssh();
+    const { binary, config } = store.getState().nginx;
     await ssh.execute(`set -e
-NGINX=/www/server/nginx/sbin/nginx
-CONFIG=/www/server/nginx/conf/nginx.conf
+NGINX=${ssh.quoteShellArg(binary)}
+CONFIG=${ssh.quoteShellArg(config)}
 test -x "$NGINX"
 pgrep -f 'nginx: master process' >/dev/null
 "$NGINX" -t -c "$CONFIG" >/dev/null
 ufw allow 80/tcp >/dev/null 2>&1 || true
 ufw allow 443/tcp >/dev/null 2>&1 || true`);
   }
-  async getRemote(): Promise<NginxRoute> {
+  async getRemote(): Promise<{ readonly url: string; hasRemote(): Promise<boolean>; close(): Promise<void>; }> {
     await this.setupReady();
     if (!await this.hasRemote()) {
       return this.makeRemote();
@@ -41,6 +35,7 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
     };
   }
   async hasRemote(): Promise<boolean> {
+    await this.setupReady();
     const ssh = new Ssh();
     const subdomain = this.remoteDescription();
     const route = this.routePath();
@@ -49,14 +44,15 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
   && grep -Fq -- ${ssh.quoteShellArg("listen 443 ssl;")} ${ssh.quoteShellArg(route)}; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
-  async makeRemote(): Promise<NginxRoute> {
+  async makeRemote(): Promise<{ readonly url: string; hasRemote(): Promise<boolean>; close(): Promise<void>; }> {
     await this.setupReady();
     const location = typeof this.input === "number"
       ? `  location / { proxy_pass http://127.0.0.1:${this.input}; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }`
       : `  location / { root ${this.input}; index index.html; try_files $uri $uri/ =404; }`;
     const certificate = new Certificate();
     const ssh = new Ssh();
-    const nginxRoot = store.getState().nginx.root;
+    const nginx = store.getState().nginx;
+    const nginxRoot = nginx.root;
     const subdomain = this.remoteDescription();
     const route = this.routePath();
     const certificatePaths = await certificate.makeRemote(subdomain);
@@ -77,8 +73,8 @@ server {
 ${location}
 }
 NGINX
-/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
-/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf`);
+${ssh.quoteShellArg(nginx.binary)} -t -c ${ssh.quoteShellArg(nginx.config)}
+${ssh.quoteShellArg(nginx.binary)} -s reload -c ${ssh.quoteShellArg(nginx.config)}`);
     return {
       url: this.url,
       hasRemote: () => this.hasRemote(),
@@ -88,10 +84,11 @@ NGINX
   async closeRemote(): Promise<void> {
     await this.setupReady();
     const ssh = new Ssh();
+    const { binary, config } = store.getState().nginx;
     await ssh.execute(`set -e
 rm -f ${ssh.quoteShellArg(this.routePath())}
-/www/server/nginx/sbin/nginx -t -c /www/server/nginx/conf/nginx.conf
-/www/server/nginx/sbin/nginx -s reload -c /www/server/nginx/conf/nginx.conf`);
+${ssh.quoteShellArg(binary)} -t -c ${ssh.quoteShellArg(config)}
+${ssh.quoteShellArg(binary)} -s reload -c ${ssh.quoteShellArg(config)}`);
   }
   private get port(): number {
     return typeof this.input === "number" ? this.input : Number(posix.basename(this.input));

@@ -1,4 +1,4 @@
-﻿import store from "../store/index.ts";
+﻿import store from "../store.ts";
 
 export default class {
   async portUse(port: number, ownerKey: string): Promise<void> {

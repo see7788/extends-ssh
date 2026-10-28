@@ -1,7 +1,6 @@
 ﻿import mcpserver from "mcpserver";
 import Apt from "./index.ts";
 
-const apt = new Apt();
 
 export default mcpserver.metas("/apt").add({
   protocol: "tool",
@@ -10,7 +9,7 @@ export default mcpserver.metas("/apt").add({
   schema: {},
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   handler: async () => {
-    await apt.setupReady();
+    await new Apt().setupReady();
     return { ready: true };
   },
 })

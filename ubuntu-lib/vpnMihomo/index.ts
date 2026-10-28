@@ -1,10 +1,10 @@
 ﻿import Base from "../public/index.ts";
 import { subscriptionUrlValidator } from "./zod.ts";
 import Ssh from "../ssh/index.ts";
-import store from "../store/index.ts";
+import store from "../store.ts";
 
 export default class extends Base {
-  async setup(): Promise<void> {
+  protected async setup(): Promise<void> {
     const ssh = new Ssh();
     await ssh.execute(`
 set -e
@@ -58,17 +58,40 @@ WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
 systemctl enable cloud-mihomo.service >/dev/null
-if [ -s /etc/mihomo/config.yaml ]; then
-  systemctl restart cloud-mihomo.service
+`);
+    const healthy = (await ssh.execute(`
+if systemctl is-active --quiet cloud-mihomo.service \
+  && test -s /etc/mihomo/config.yaml \
+  && /usr/local/bin/mihomo -t -d /etc/mihomo >/dev/null 2>&1; then
+  printf yes
+else
+  printf no
+fi
+`)).stdout.trim() === "yes";
+    if (!healthy) await this.apply();
+  }
+
+  async stop(): Promise<void> {
+    const ssh = new Ssh();
+    await ssh.execute(`
+set -e
+systemctl stop cloud-mihomo.service
+if systemctl is-active --quiet cloud-mihomo.service; then
+  echo "cloud-mihomo.service 停止失败" >&2
+  exit 1
 fi
 `);
   }
 
-  /** 使用 store 中的可更新配置更新订阅配置并重启 Mihomo 服务。 */
-  async update(): Promise<void> {
-    const vpnState = store.getState().vpnServer;
+  /** 将 store 中的完整配置应用到现有 Mihomo 配置并重启服务。 */
+  async set(): Promise<void> {
+    await this.setupReady();
+    await this.apply();
+  }
+
+  private async apply(): Promise<void> {
+    const vpnState = store.getState().vpnMihomo;
     const subscriptionUrl = subscriptionUrlValidator.parse(vpnState.subscriptionUrl);
-    await this.setup();
     const ssh = new Ssh();
     await ssh.execute(`
 set -e
@@ -94,6 +117,22 @@ if not isinstance(config, dict):
     config = yaml.safe_load(decoded.decode("utf-8-sig"))
 if not isinstance(config, dict):
     raise SystemExit("订阅内容不是 Clash/Mihomo YAML 配置")
+target_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+PY
+`);
+    await ssh.execute(`
+set -e
+test -s /etc/mihomo/config.yaml
+test -x /usr/local/bin/mihomo
+python3 - /etc/mihomo/config.yaml <<'PY'
+import pathlib
+import sys
+import yaml
+
+target_path = pathlib.Path(sys.argv[1])
+config = yaml.safe_load(target_path.read_text(encoding="utf-8-sig"))
+if not isinstance(config, dict):
+    raise SystemExit("现有 Mihomo 配置不是有效对象")
 
 selection_group_name = ${ssh.quoteShellArg(vpnState.proxySelection.groupName)}
 selection_proxy_name = ${ssh.quoteShellArg(vpnState.proxySelection.proxyName)}
@@ -102,7 +141,7 @@ if bool(selection_group_name) != bool(selection_proxy_name):
 if selection_group_name:
     groups = config.get("proxy-groups")
     if not isinstance(groups, list):
-        raise SystemExit("订阅配置没有 proxy-groups，无法设置指定节点")
+        raise SystemExit("配置没有 proxy-groups，无法设置指定节点")
     group = next((item for item in groups if isinstance(item, dict) and item.get("name") == selection_group_name), None)
     if not isinstance(group, dict):
         raise SystemExit(f"没有找到代理组：{selection_group_name}")
@@ -128,10 +167,12 @@ tun.update({
 })
 config["tun"] = tun
 dns = config.get("dns") if isinstance(config.get("dns"), dict) else {}
-dns.setdefault("enable", ${vpnState.dns.enable ? "True" : "False"})
-dns.setdefault("listen", ${ssh.quoteShellArg(vpnState.dns.listen)})
-dns.setdefault("enhanced-mode", ${ssh.quoteShellArg(vpnState.dns.enhancedMode)})
-dns.setdefault("nameserver", ${JSON.stringify(vpnState.dns.nameservers)})
+dns["enable"] = ${vpnState.dns.enable ? "True" : "False"}
+dns["listen"] = ${ssh.quoteShellArg(vpnState.dns.listen)}
+dns["enhanced-mode"] = ${ssh.quoteShellArg(vpnState.dns.enhancedMode)}
+dns["nameserver"] = ${JSON.stringify(vpnState.dns.nameservers)}
+dns["fake-ip-filter-mode"] = "blacklist"
+dns["fake-ip-filter"] = ${JSON.stringify(vpnState.dns.fakeIpFilter)}
 config["dns"] = dns
 target_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
 PY
@@ -141,7 +182,7 @@ systemctl restart cloud-mihomo.service
 systemctl is-active --quiet cloud-mihomo.service
 `);
     store.setState(state => {
-      state.vpnServer.subscriptionUrl = subscriptionUrl;
+      state.vpnMihomo.subscriptionUrl = subscriptionUrl;
     });
   }
 

@@ -4,15 +4,8 @@ import Ssh from "../ssh/index.ts";
 import Nginx from "../nginx/index.ts";
 import Vite from "../vite/index.ts";
 import type { Plugin } from "vite";
-type Handle = { dispose(): Promise<void>; port: number };
-type SshForwardResult = {
-  readonly remotePort: number;
-  hasRemote(): Promise<boolean>;
-  close(): Promise<void>;
-};
-
 export default class extends Base {
-  private handle?: Handle;
+  private handle?: { dispose(): Promise<void>; port: number };
   constructor(private readonly port: number) {
     super();
   }
@@ -41,7 +34,7 @@ export default class extends Base {
     const ssh = new Ssh();
     await ssh.execute("true");
   }
-  async makeRemote(): Promise<SshForwardResult> {
+  async makeRemote(): Promise<{ readonly remotePort: number; hasRemote(): Promise<boolean>; close(): Promise<void>; }> {
     await this.setupReady();
     await this.ensureForward();
     return {
@@ -51,10 +44,11 @@ export default class extends Base {
     };
   }
   async hasRemote(): Promise<boolean> {
+    await this.setupReady();
     if (!this.handle) return false;
     return this.remotePortIsListening();
   }
-  async getRemote(): Promise<SshForwardResult> {
+  async getRemote(): Promise<{ readonly remotePort: number; hasRemote(): Promise<boolean>; close(): Promise<void>; }> {
     await this.setupReady();
     if (!await this.hasRemote()) {
       return this.makeRemote();
@@ -94,7 +88,7 @@ export default class extends Base {
       const failed = () => { local.destroy(); reject(); };
       local.once("error", failed);
       local.once("connect", () => { local.off("error", failed); const remote = accept(); local.pipe(remote).pipe(local); });
-    }) as Handle;
+    }) as { dispose(): Promise<void>; port: number };
     this.handle = handle;
   }
   private async remotePortIsListening(): Promise<boolean> {

@@ -2,7 +2,6 @@
 import Certificate from "./index.ts";
 import { inputValidator } from "./zod.ts";
 
-const certificate = new Certificate();
 
 export default mcpserver.metas("/certificate").add({
   protocol: "tool",
@@ -11,6 +10,6 @@ export default mcpserver.metas("/certificate").add({
   schema: inputValidator.shape,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   handler: async input => {
-    return certificate.makeRemote(input.hostname);
+    return new Certificate().makeRemote(input.hostname);
   },
 })

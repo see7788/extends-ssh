@@ -1,15 +1,18 @@
 ﻿import Base from "../public/index.ts";
 import Nginx from "../nginx/index.ts";
-import store from "../store/index.ts";
+import store from "../store.ts";
 import Ssh from "../ssh/index.ts";
 import Vite from "../vite/index.ts";
 import type { Plugin } from "vite";
-type SftpDirectory = {
-  readonly path: `${string}/${number}`;
-  hasRemote(): Promise<boolean>;
-};
-
 export default class extends Base {
+  async upload(localPath: string, remotePath: string): Promise<void> {
+    await this.setupReady();
+    const ssh = new Ssh();
+    if (!await ssh.putDirectory(localPath, remotePath, { recursive: true, validate: () => true })) {
+      throw new Error(`SFTP directory upload failed: ${remotePath}`);
+    }
+  }
+
   vitePlugin(port: number): Plugin {
     const vite = new Vite(port);
     const nginx = new Nginx("sftp", this.remotePath(port));
@@ -24,7 +27,7 @@ export default class extends Base {
         });
       },
       closeBundle: async () => {
-        const remote = await this.makeRemote({ port, localPath: root });
+        await this.makeRemote({ port, localPath: root });
         await nginx.makeRemote();
       },
     };
@@ -33,7 +36,7 @@ export default class extends Base {
     const ssh = new Ssh();
     await ssh.execute("true");
   }
-  async getRemote(port: number): Promise<SftpDirectory> {
+  async getRemote(port: number): Promise<{ readonly path: `/www/wwwroot/extends-ssh/${number}`; hasRemote(): Promise<boolean>; }> {
     await this.setupReady();
     if (!await this.hasRemote(port)) {
       throw new Error(`开发端口尚未分配 SFTP 远程目录: ${port}`);
@@ -51,7 +54,7 @@ export default class extends Base {
     const result = await ssh.execute(`test -f ${ssh.quoteShellArg(markerPath)} && cat ${ssh.quoteShellArg(markerPath)} || true`);
     return result.stdout.trim() === String(port);
   }
-  async makeRemote(input: { port: number; localPath: string }): Promise<SftpDirectory> {
+  async makeRemote(input: { port: number; localPath: string }): Promise<{ readonly path: `/www/wwwroot/extends-ssh/${number}`; hasRemote(): Promise<boolean>; }> {
     await this.makeRemoteEnsure(input);
     return {
       path: this.remotePath(input.port),
@@ -68,12 +71,13 @@ export default class extends Base {
     const owner = marker.stdout.trim();
     if (owner === "__occupied__") throw new Error(`远程目录已被其他资源占用: ${remotePath}`);
     if (owner && owner !== key) throw new Error(`远程目录已被开发端口 ${owner} 占用: ${remotePath}`);
-    const uploaded = await ssh.putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true });
-    if (!uploaded) throw new Error(`远程目录同步失败: ${remotePath}`);
+    if (!await ssh.putDirectory(value.localPath, remotePath, { recursive: true, validate: () => true })) {
+      throw new Error(`SFTP directory upload failed: ${remotePath}`);
+    }
     await ssh.execute(`printf %s ${ssh.quoteShellArg(key)} > ${ssh.quoteShellArg(markerPath)}`);
   }
 
-  public remotePath(port: number): `${string}/${number}` {
+  public remotePath(port: number): `/www/wwwroot/extends-ssh/${number}` {
     return `${store.getState().sftp.remoteRoot}/${port}`;
   }
 }

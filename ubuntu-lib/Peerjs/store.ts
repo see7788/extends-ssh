@@ -2,10 +2,10 @@
 
 const peerjsStore: ImmerStateCreator<{
   peerjs: {
-    image: "peerjs/peerjs-server:1.0.2";
-    key: "peerjs";
-    listenPort: 9000;
-    pathname: "/peerjs";
+    image: string;
+    key: string;
+    listenPort: number;
+    pathname: string;
   };
 }> = () => ({
   peerjs: {
