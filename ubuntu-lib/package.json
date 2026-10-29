@@ -5,7 +5,9 @@
   "exports": {
     ".": "./index/index.ts",
     "./kasmVnc": "./kasmVnc/index.ts",
-    "./slices": "./slices.ts"
+    "./slices": "./slices.ts",
+    "./sshForward": "./sshForward/index.ts",
+    "./vite": "./vite/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
