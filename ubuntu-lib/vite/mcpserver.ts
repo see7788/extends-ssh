@@ -1,11 +1,6 @@
 ﻿import mcpserver from "mcpserver";
 import { z } from "zod";
-import store from "../store.ts";
-
-const viteState = () => Object.entries(store.getState().vite).map(([devPort, value]) => ({
-  devPort: Number(devPort),
-  ...value,
-}));
+import { getViteState, listViteState } from "./state.ts";
 
 export default mcpserver.metas("/vite")
   .add({
@@ -14,7 +9,7 @@ export default mcpserver.metas("/vite")
     description: "读取已登记的 Vite 项目、开发端口、项目路径和 Vite 插件注入常量。",
     schema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: () => viteState(),
+    handler: () => listViteState(),
   })
   .add({
     protocol: "tool",
@@ -23,8 +18,8 @@ export default mcpserver.metas("/vite")
     schema: { port: z.number().int().min(1).max(65535) },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     handler: input => {
-      const value = store.getState().vite[input.port];
+      const value = getViteState(input.port);
       if (!value) throw new Error(`未找到 Vite 开发端口: ${input.port}`);
-      return { devPort: input.port, ...value };
+      return value;
     },
   });
