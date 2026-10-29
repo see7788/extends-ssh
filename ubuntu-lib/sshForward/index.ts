@@ -20,13 +20,17 @@ export default class extends Base {
           sshForward: { url: nginx.url },
         });
       },
-      configureServer: async () => {
+      configureServer: async server => {
         const forward = await this.getRemote();
         await nginx.makeRemote();
-        return async () => {
-          await forward.close();
-          await nginx.closeRemote();
-        };
+        server.httpServer?.once("close", () => {
+          void (async () => {
+            await forward.close();
+            await nginx.closeRemote();
+          })().catch(error => {
+            console.error("关闭 SSH 内网穿透和 Nginx 路由失败", error);
+          });
+        });
       },
     };
   }
