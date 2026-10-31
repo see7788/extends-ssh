@@ -3,7 +3,7 @@ import store from "../store.ts";
 import Ssh from "../ssh/index.ts";
 
 export default class extends Base {
-  protected async setup(): Promise<void> {
+  async setup(): Promise<void> {
     const ssh = new Ssh();
     const { version, architecture, sha256 } = store.getState().nodejs;
     const archive = `node-v${version}-${architecture}.tar.xz`;

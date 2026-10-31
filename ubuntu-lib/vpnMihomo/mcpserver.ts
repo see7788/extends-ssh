@@ -1,7 +1,5 @@
 ﻿import mcpserver from "mcpserver";
 import VpnMihomo from "./index.ts";
-import store from "../store.ts";
-
 
 export default mcpserver.metas("/vpnMihomo")
   .add({
@@ -11,7 +9,7 @@ export default mcpserver.metas("/vpnMihomo")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async () => {
-      await new VpnMihomo().setupReady();
+      await new VpnMihomo().setup();
       return { ready: true };
     },
   })
@@ -35,18 +33,5 @@ export default mcpserver.metas("/vpnMihomo")
     handler: async () => {
       await new VpnMihomo().stop();
       return { stopped: true };
-    },
-  })
-  .add({
-    protocol: "tool",
-    path: "/persist",
-    description: "空修改当前 Mihomo store，仅用于生成或刷新持久化文件，不改变配置值。",
-    schema: {},
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    handler: () => {
-      store.setState(state => {
-        state.vpnMihomo.subscriptionUrl = state.vpnMihomo.subscriptionUrl;
-      });
-      return { persisted: true, vpnMihomo: store.getState().vpnMihomo };
     },
   });

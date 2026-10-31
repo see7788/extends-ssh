@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Plugin } from "vite";
 import store from "../store.ts";
 import merge from "lodash/merge";
-import { getViteState } from "./state.ts";
+import { getViteState, listViteState } from "./state.ts";
 export default class {
   constructor(private readonly devPort: number) { }
 
@@ -16,6 +16,16 @@ export default class {
       );
     });
   }
+
+  list(): ReturnType<typeof listViteState> {
+    return listViteState();
+  }
+
+  get(): NonNullable<ReturnType<typeof getViteState>> {
+    const value = getViteState(this.devPort);
+    if (!value) throw new Error(`未找到 Vite 开发端口: ${this.devPort}`);
+    return value;
+  }
   mergeStatePlugin(define: Record<string, unknown>): Plugin {
     return {
       name: `mergeStatePlugin${this.devPort}`,
@@ -26,21 +36,18 @@ export default class {
     }
   }
 
-  writeFilePlugin(): Plugin {
+  writeFilePlugin(define: Record<string, unknown> = {}): Plugin {
     return {
       name: `writeFilePlugin${this.devPort}`,
       enforce: "post",
       configResolved: async ({ root }) => {
-        const define = getViteState(this.devPort);
-        if (define) {
-          const declareDirectory = path.join(root, "src");
-          await mkdir(declareDirectory, { recursive: true });
-          await fsWriteFile(
-            path.join(declareDirectory, `declare.ts`),
-            `export default ${JSON.stringify(define, null, 2)} as const;`,
-            "utf8",
-          );
-        }
+        const declareDirectory = path.join(root, "src");
+        await mkdir(declareDirectory, { recursive: true });
+        await fsWriteFile(
+          path.join(declareDirectory, `declare.ts`),
+          `export default ${JSON.stringify({ ...getViteState(this.devPort), ...define }, null, 2)} as const;`,
+          "utf8",
+        );
       }
     }
   }

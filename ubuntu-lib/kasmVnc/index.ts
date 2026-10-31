@@ -54,7 +54,7 @@ export default class extends Base {
     };
   }
 
-  protected async setup(): Promise<void> {
+  async setup(): Promise<void> {
     const index = this.index;
     const sessionService = this.sessionService(index);
     const install = store.getState().kasmVnc.server;

@@ -1,12 +1,12 @@
 ﻿import Base from "../public/index.ts";
-import Certificate from "../certificate/index.ts";
+import LetsEncrypt from "../letsencrypt/index.ts";
 import { posix } from "node:path";
 import Ssh from "../ssh/index.ts";
 import store from "../store.ts";
 
 export default class extends Base {
   constructor(
-    private readonly service: "sftp" | "pm2" | "sshForward",
+    private readonly service: "sftp" | "pm2" | "forward",
     private readonly input: number | `${string}/${number}` | `/www/wwwroot/extends-ssh/${number}`,
   ) {
     super();
@@ -49,13 +49,13 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
     const location = typeof this.input === "number"
       ? `  location / { proxy_pass http://127.0.0.1:${this.input}; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }`
       : `  location / { root ${this.input}; index index.html; try_files $uri $uri/ =404; }`;
-    const certificate = new Certificate();
+    const certificate = new LetsEncrypt();
     const ssh = new Ssh();
     const nginx = store.getState().nginx;
     const nginxRoot = nginx.root;
     const subdomain = this.remoteDescription();
     const route = this.routePath();
-    const certificatePaths = await certificate.makeRemote(subdomain);
+    const certificatePaths = await certificate.makeRemote(subdomain, nginx.binary, nginx.config);
     await ssh.execute(`set -e
 mkdir -p ${ssh.quoteShellArg(nginxRoot)}
 cat > ${ssh.quoteShellArg(route)} <<'NGINX'

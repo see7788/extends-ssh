@@ -1,14 +1,6 @@
 node_modules/
-.*/
 .pnpm-store/**
 **/node_modules/**
-**/dist/**
-**/**_bak/
-**/**.bak
-# Local backup directories and backup files are not tracked.
-**/.bak/
-**/.bak2/
-**/*.bak
-**/*.bak2
-**/*.bak.ts
-.dist/**
+**/.dist/**
+**/.bak**
+**/.bak/**

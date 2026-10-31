@@ -8,7 +8,7 @@ import type { PeerOptions } from "peerjs";
 import type { Plugin } from "vite";
 
 export default class extends Base {
-  protected async setup(): Promise<void> {
+  async setup(): Promise<void> {
     const docker = new Docker();
     const ssh = new Ssh();
     const { peerjs } = store.getState();

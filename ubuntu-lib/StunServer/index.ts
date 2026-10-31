@@ -9,7 +9,7 @@ export default class extends Base {
   get port(): number {
     return store.getState().stunServer.port;
   }
-  protected async setup(): Promise<void> {
+  async setup(): Promise<void> {
     const docker = new Docker();
     const ssh = new Ssh();
     const { stunServer } = store.getState();

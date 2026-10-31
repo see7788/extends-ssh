@@ -1,13 +1,13 @@
 ﻿import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 
-const certificateStore: ImmerStateCreator<{
-  certificate: {
+const letsencryptStore: ImmerStateCreator<{
+  letsencrypt: {
     root: "/etc/extends-ssh/certificates";
   };
 }> = () => ({
-  certificate: {
+  letsencrypt: {
     root: "/etc/extends-ssh/certificates",
   },
 });
 
-export default certificateStore;
+export default letsencryptStore;

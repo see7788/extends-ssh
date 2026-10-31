@@ -10,7 +10,7 @@ export default mcpserver.metas("/kasmVnc")
     description: "Ensure one KasmVNC instance is running.",
     schema: indexInputValidator.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    handler: async input => { await new KasmVnc(input.index).setupReady(); return { ready: true }; },
+    handler: async input => { await new KasmVnc(input.index).setup(); return { ready: true }; },
   })
   .add({
     protocol: "tool",

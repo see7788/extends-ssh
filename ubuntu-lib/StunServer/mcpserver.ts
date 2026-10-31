@@ -10,7 +10,7 @@ export default mcpserver.metas("/stunServer")
     schema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async () => {
-      await new StunServer().setupReady();
+      await new StunServer().setup();
       return { ready: true };
     },
   })

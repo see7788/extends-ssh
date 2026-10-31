@@ -2,7 +2,7 @@
 import Ssh from "../ssh/index.ts";
 
 export default class extends Base {
-  protected async setup(): Promise<void> {
+  async setup(): Promise<void> {
     const ssh = new Ssh();
     await ssh.execute(`
 set -e

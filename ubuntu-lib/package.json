@@ -6,7 +6,8 @@
     ".": "./index/index.ts",
     "./kasmVnc": "./kasmVnc/index.ts",
     "./slices": "./slices.ts",
-    "./sshForward": "./sshForward/index.ts",
+    "./frp": "./frp/index.ts",
+    "./letsencrypt": "./letsencrypt/index.ts",
     "./vite": "./vite/index.ts"
   },
   "scripts": {
