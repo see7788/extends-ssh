@@ -1,4 +1,4 @@
-﻿import mcpserver from "mcpserver";
+import mcpserver from "mcpserver";
 import FrpForward from "./index.ts";
 import { inputValidator } from "./zod.ts";
 

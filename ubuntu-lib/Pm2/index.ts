@@ -3,7 +3,7 @@ import Nginx from "../nginx/index.ts";
 import Nodejs from "../nodejs/index.ts";
 import Sftp from "../sftp/index.ts";
 import Ssh from "../ssh/index.ts";
-import Vite from "../vite/index.ts";
+import Vite from "../ports/index.ts";
 import type { Plugin } from "vite";
 
 export default class extends Base {

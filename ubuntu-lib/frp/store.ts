@@ -1,20 +1,20 @@
-﻿import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
+import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
 
 const frpStore: ImmerStateCreator<{
   frp: {
-    clientBinary: string;
-    version: string;
-    serverAddr: string;
-    serverPort: number;
-    token: string;
+    root: "/opt/frp";
+    binary: "/usr/local/bin/frps";
+    config: "/etc/frp/frps.toml";
+    service: "frps.service";
+    serverPort: 7000;
   };
 }> = () => ({
   frp: {
-    clientBinary: "",
-    version: "0.70.1",
-    serverAddr: "",
+    root: "/opt/frp",
+    binary: "/usr/local/bin/frps",
+    config: "/etc/frp/frps.toml",
+    service: "frps.service",
     serverPort: 7000,
-    token: "",
   },
 });
 

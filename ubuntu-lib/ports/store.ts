@@ -1,9 +1,9 @@
 ﻿import type { ImmerStateCreator } from "zustand-lib/immerStateCreator";
-
+//ownerKey端口使用者
 const postsStore: ImmerStateCreator<{
-  posts: Record<number, string>;
+  ports: Record<number, Record<string, unknown> & { ownerKey: string }>;
 }> = () => ({
-  posts: {},
+  ports: {},
 });
 
 export default postsStore;

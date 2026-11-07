@@ -64,15 +64,6 @@ export default class extends Base {
 
 `posts/index.ts` 的 `portUse(port, ownerKey)` 负责全局端口所有权判断。端口所有权记录保存在 `posts` store，与具体远程服务的启动和关闭分开管理。
 
-## Vite 插件
-
-`vite/index.ts` 负责：
-
-- 将业务定义合并到对应开发端口的 Vite 状态；
-- 提供最早执行的 `mergeStatePlugin`；
-- 提供最晚执行的 `writeFilePlugin`，把合并后的定义写入项目文件。
-
-各业务切片自己创建并消费 Vite 插件，不再通过已停用的 `vite/Base.ts` 组合器工作。
 
 ## MCP
 

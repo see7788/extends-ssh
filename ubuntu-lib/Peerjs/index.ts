@@ -3,7 +3,7 @@ import Docker from "../docker/index.ts";
 import Ssh from "../ssh/index.ts";
 import StunServer from "../stunServer/index.ts";
 import store from "../store.ts";
-import Vite from "../vite/index.ts";
+import Vite from "../ports/index.ts";
 import type { PeerOptions } from "peerjs";
 import type { Plugin } from "vite";
 
@@ -37,6 +37,8 @@ else
   docker start peerjs >/dev/null
 fi
 test "$(docker inspect -f '{{.State.Running}}' peerjs)" = true
+ufw allow ${listenPort}/tcp >/dev/null
+ufw reload >/dev/null
 for attempt in $(seq 1 40); do
   if curl --fail --silent ${ssh.quoteShellArg(`http://127.0.0.1:${listenPort}${pathname}`)} \
     | grep -q 'PeerJS'; then

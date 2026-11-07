@@ -2,7 +2,7 @@
 import Nginx from "../nginx/index.ts";
 import store from "../store.ts";
 import Ssh from "../ssh/index.ts";
-import Vite from "../vite/index.ts";
+import Vite from "../ports/index.ts";
 import type { Plugin } from "vite";
 export default class extends Base {
   async upload(localPath: string, remotePath: string): Promise<void> {

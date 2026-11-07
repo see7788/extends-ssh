@@ -11,11 +11,9 @@ import sftpSlice from "./sftp/mcpserver.ts";
 import sshSlice from "./ssh/mcpserver.ts";
 import stunServerSlice from "./stunServer/mcpserver.ts";
 import vpnMihomoSlice from "./vpnMihomo/mcpserver.ts";
-import viteSlice from "./vite/mcpserver.ts";
 import frpSlice from "./frp/mcpserver.ts";
 
 export default mcpserver.metas("/")
-  .baseAdd(viteSlice)
   .baseAdd(frpSlice)
   .baseAdd(aptSlice)
   .baseAdd(dockerSlice)

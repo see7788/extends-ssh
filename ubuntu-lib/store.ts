@@ -12,11 +12,11 @@ import stunServerStore from "./stunServer/store.ts";
 import nginxStore from "./nginx/store.ts";
 import nodejsStore from "./nodejs/store.ts";
 import letsencryptStore from "./letsencrypt/store.ts";
-import viteStore from "./vite/store.ts";
-import postsStore from "./posts/store.ts";
+import postsStore from "./ports/store.ts";
 import vpnMihomoStore from "./vpnMihomo/store.ts";
 import kasmVncStore from "./kasmVnc/store.ts";
 import frpStore from "./frp/store.ts";
+
 import pkg from "./package.json";
 
 const store = createStore<
@@ -28,7 +28,6 @@ ReturnType<typeof publicStore>
   & ReturnType<typeof stunServerStore>
   & ReturnType<typeof nginxStore>
   & ReturnType<typeof nodejsStore>
-  & ReturnType<typeof viteStore>
   & ReturnType<typeof postsStore>
   & ReturnType<typeof vpnMihomoStore>
   & ReturnType<typeof kasmVncStore>
@@ -46,7 +45,6 @@ ReturnType<typeof publicStore>
       ...nginxStore(...s),
       ...nodejsStore(...s),
       ...letsencryptStore(...s),
-      ...viteStore(...s),
       ...postsStore(...s),
       ...vpnMihomoStore(...s),
       ...kasmVncStore(...s),
@@ -54,5 +52,5 @@ ReturnType<typeof publicStore>
     })),
   }),
 );
-
+//库外部严禁消费；项目内切片严禁跨切片消费，各个切片消费自己的store（跨切片消费只能用该切片的index提供的公开参数）
 export default store;
