@@ -1,20 +1,19 @@
-﻿import Base from "../public/index.ts";
-import store from "../store.ts";
+import Base from "../public/index.ts";
 import Ssh from "../ssh/index.ts";
 
 export default class extends Base {
   async setup(): Promise<void> {
     const ssh = new Ssh();
-    const { version, architecture, sha256 } = store.getState().nodejs;
+    const { version, architecture, sha256 } = { version: this.envs.nodejs.packageVersion, architecture: "linux-x64", sha256: "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307" };
     const archive = `node-v${version}-${architecture}.tar.xz`;
-    const root = store.getState().nodejs.root;
+    const root = this.envs.nodejs.root;
     await ssh.execute(`set -e
 if ! command -v curl >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then
   apt-get update -qq
   apt-get install -y -qq --no-install-recommends curl ca-certificates tar xz-utils >/dev/null
 fi
 if [ ! -x ${ssh.quoteShellArg(`${root}/bin/node`)} ]; then
-  cd /tmp
+  cd ${ssh.quoteShellArg(this.envs.nodejs.tempRoot)}
   rm -f ${ssh.quoteShellArg(archive)}
   curl -fL --connect-timeout 15 --max-time 180 --retry 2 -o ${ssh.quoteShellArg(archive)} "https://nodejs.org/download/release/v${version}/${archive}"
   printf '%s  %s
@@ -24,7 +23,7 @@ if [ ! -x ${ssh.quoteShellArg(`${root}/bin/node`)} ]; then
   tar -xJf ${ssh.quoteShellArg(archive)} --strip-components=1 -C ${ssh.quoteShellArg(root)}
   rm -f ${ssh.quoteShellArg(archive)}
 fi
-for command in node npm npx corepack; do ln -sfn ${ssh.quoteShellArg(`${root}/bin`)}"/$command" "/usr/local/bin/$command"; done
+for command in node npm npx corepack; do ln -sfn ${ssh.quoteShellArg(`${root}/bin`)}"/$command" ${ssh.quoteShellArg(this.envs.nodejs.globalBin)}/$command; done
 node --version`);
   }
 

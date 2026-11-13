@@ -1,5 +1,5 @@
 ﻿import store from "../store.ts";
-import merge from "lodash/merge";
+import merge from "lodash/merge.js";
 import path from "node:path";
 import { mkdir, writeFile as fsWriteFile } from "node:fs/promises";
 import type { Plugin } from "vite";
@@ -8,7 +8,12 @@ type Define_t = {
   ownerKey?: never;
 };
 export default class {
-  constructor(private readonly devPort: number, private must_publicPort: boolean = true) { }
+  devPort
+  must_publicPort
+  constructor(devPort: number, must_publicPort: boolean = false) {
+    this.devPort=devPort;
+    this.must_publicPort=must_publicPort
+   }
   //端口占用检查,import.meta.filename||vite.configResolved.root
   ownerKeyProt(ownerKey: string) {
     store.setState(state => {
@@ -17,13 +22,11 @@ export default class {
           throw new Error("服务器放行端口是10000-20000" + String(this.devPort));
         }
       }
-      const c = state.ports[this.devPort]
-      if (c && c.ownerKey && c.ownerKey !== ownerKey) {
-        throw new Error(`端口 ${this.devPort} 已被 ${c.ownerKey} 占用, 无法在 ${ownerKey} 使用`);
+      const c = state.ports[this.devPort]?.ownerKey
+      if (c && c !== ownerKey) {
+        throw new Error(`端口 ${this.devPort} 已被 ${c} 占用, 无法在 ${ownerKey} 使用`);
       }
-      if (!c) {
-        state.ports[this.devPort].ownerKey = ownerKey
-      }
+      //      state.ports[this.devPort].ownerKey = ownerKey
     });
   }
   //收集
@@ -38,18 +41,23 @@ export default class {
   }
   //生成临时文件,并行常量注入
   writeFilePlugin(define: Define_t): Plugin {
+    const k = `__declare__`
     return {
       name: `writeFilePlugin${this.devPort}`,
       enforce: "post",
       config: () => ({
         define: {
-          __MY_DEFINE__: JSON.stringify({
+          [k]: JSON.stringify({
             ...store.getState().ports[this.devPort],
             ...define,
           }),
         },
       }),
-      configResolved: async ({ root }) => {
+      configResolved: async ({ configFile }) => {
+        if (!configFile) {
+          throw new Error(`configFile 为空`);
+        }
+        const root = path.dirname(configFile || "")
         const state = store.getState().ports[this.devPort];
         this.ownerKeyProt(root)
         store.setState(state => {
@@ -63,11 +71,17 @@ export default class {
         const declareDirectory = path.join(root, "src", "declare");
         await mkdir(declareDirectory, { recursive: true });
         await fsWriteFile(
-          path.join(declareDirectory, `declare.ts`),
+          path.join(declareDirectory, `${k}.ts`),
           `export default ${JSON.stringify({ ...state, ...define }, null, 2)} as const;`,
+          "utf8",
+        );
+        await fsWriteFile(
+          path.join(declareDirectory, `${k}.d.ts`),
+          `declare const  ${k}: ${JSON.stringify({ ...state, ...define }, null, 2)}`,
           "utf8",
         );
       }
     }
   }
 }
+

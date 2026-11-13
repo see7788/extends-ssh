@@ -7,6 +7,32 @@ import Vite from "../ports/index.ts";
 import type { Plugin } from "vite";
 
 export default class extends Base {
+  async list(): Promise<{
+    host: string;
+    processes: Array<{ id: number; name: string; status: string; pid: number | null; startedAt: string | null; script: string | null }>;
+  }> {
+    await this.setupReady();
+    const ssh = new Ssh();
+    const [{ host }, result] = await Promise.all([ssh.config(), ssh.execute("pm2 jlist")]);
+    const list: unknown = JSON.parse(result.stdout);
+    if (!Array.isArray(list)) throw new Error("PM2 未返回进程数组");
+    return {
+      host,
+      processes: list.flatMap((entry, index) => {
+        if (!entry || typeof entry !== "object") return [];
+        const value = entry as { pm_id?: unknown; name?: unknown; pm2_env?: { status?: unknown; pid?: unknown; pm_uptime?: unknown; pm_exec_path?: unknown } };
+        return [{
+          id: typeof value.pm_id === "number" ? value.pm_id : index,
+          name: String(value.name ?? ""),
+          status: String(value.pm2_env?.status ?? "unknown"),
+          pid: typeof value.pm2_env?.pid === "number" ? value.pm2_env.pid : null,
+          startedAt: typeof value.pm2_env?.pm_uptime === "number" ? new Date(value.pm2_env.pm_uptime).toISOString() : null,
+          script: typeof value.pm2_env?.pm_exec_path === "string" ? value.pm2_env.pm_exec_path : null,
+        }];
+      }),
+    };
+  }
+
   vitePlugin(
     port: number,
     input: Omit<Parameters<this["makeRemote"]>[0], "port" | "cwd">,

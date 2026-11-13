@@ -1,8 +1,7 @@
-﻿import Base from "../public/index.ts";
+import Base from "../public/index.ts";
 import Docker from "../docker/index.ts";
 import Ssh from "../ssh/index.ts";
 import StunServer from "../stunServer/index.ts";
-import store from "../store.ts";
 import Vite from "../ports/index.ts";
 import type { PeerOptions } from "peerjs";
 import type { Plugin } from "vite";
@@ -11,9 +10,10 @@ export default class extends Base {
   async setup(): Promise<void> {
     const docker = new Docker();
     const ssh = new Ssh();
-    const { peerjs } = store.getState();
     const { host } = await ssh.config();
-    const { image, key, listenPort, pathname } = peerjs;
+    const { imageName, packageVersion } = this.envs.peerjs;
+    const { key, listenPort, pathname } = { ...{ key: "peerjs", listenPort: 9000, pathname: "/peerjs" } };
+    const image = `${imageName}:${packageVersion}`;
     const configuration = `${image}|${listenPort}|${pathname}|${key}`;
     await docker.setupReady();
     await ssh.execute(`
@@ -59,15 +59,15 @@ exit 1
   }
 
   get endpoint(): PeerOptions {
-    const { peerjs } = store.getState();
+    const { key, listenPort, pathname } = { key: "peerjs", listenPort: 9000, pathname: "/peerjs" };
     const ssh = new Ssh();
     const stunServer = new StunServer();
     return {
       host: ssh.host,
-      port: peerjs.listenPort,
-      path: peerjs.pathname,
+      port: listenPort,
+      path: pathname,
       secure: false as const,
-      key: peerjs.key,
+      key,
       config: {
         iceServers: [{ urls: `stun:${ssh.host}:${stunServer.port}` }],
       },

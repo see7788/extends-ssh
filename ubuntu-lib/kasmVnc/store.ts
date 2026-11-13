@@ -6,26 +6,17 @@ const kasmVncStore: ImmerStateCreator<{
       readonly releaseApi: "https://github.com/kasmtech/KasmVNC/releases/latest"; // KasmVNC 官方 Release 最新版本地址
       readonly packagePrefix: "kasmvncserver"; // 安装包名前缀
       readonly aptPackages: readonly string[]; // KasmVNC 初始化依赖
-      readonly httpdDirectory: "/opt/extends-ssh/kasmvnc-www"; // KasmVNC Web 前端静态文件目录
     };
     readonly chromium: { // Chromium 安装配置
       readonly aptPackages: readonly string[]; // Chromium 系统依赖
       readonly snapPackage: "chromium"; // Chromium Snap 包名
-      readonly binary: "/snap/chromium/current/usr/lib/chromium-browser/chrome"; // Chromium 可执行文件
-      readonly extensionDirectory: "/opt/extends-ssh/chromium-extension"; // Chromium 扩展静态文件目录
-      readonly dataDir: "/var/lib/kasm-vnc/chromium"; // Chromium 实例数据根目录，源码按实例追加后缀
-      readonly targetRoot: "/var/lib/kasm-vnc/chromium-target"; // Chromium 启动目标文件根目录
     };
     readonly wechat: { // 微信安装配置
       readonly aptPackages: readonly string[]; // 微信系统依赖
       readonly packageUrl: "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb"; // 微信安装包地址
-      readonly binary: "/opt/wechat/wechat"; // 微信备用可执行文件
-      readonly dataDir: "/var/lib/kasm-vnc/wechat/.xwechat"; // 微信登录状态和缓存目录基路径，源码按实例追加后缀
-      readonly filesDir: "/var/lib/kasm-vnc/wechat/xwechat_files"; // 微信文件目录基路径，源码按实例追加后缀
     };
     readonly desktop: { // XFCE 远程桌面安装配置
       readonly aptPackages: readonly string[]; // XFCE、Thunar 和 dbus 依赖
-      readonly dataDir: "/var/lib/kasm-vnc/desktop"; // XFCE 实例数据根目录，源码按实例追加后缀
     };
     readonly instances: Array<{
       readonly application:

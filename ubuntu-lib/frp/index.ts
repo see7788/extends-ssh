@@ -11,7 +11,7 @@ import store from "../store.ts";
 import Nginx from "../nginx/index.ts";
 import Vite from "../ports/index.ts";
 
-const frpVersion = "0.70.1";
+
 
 type FrpProcess = {
   child: ChildProcessByStdio<null, Readable, Readable>;
@@ -25,44 +25,73 @@ export default class extends Base {
   private handle?: FrpProcess;
   private serverConfig?: { serverAddr: string; bindPort: number; token: string };
 
-  constructor(private readonly port: number) {
+  private readonly port: number;
+
+  constructor(port: number) {
     super();
+    this.port = port;
   }
 
   vitePlugin(): Plugin {
     const nginx = new Nginx("forward", this.port);
     const vite = new Vite(this.port);
+    let started = false;
+    let starting: Promise<void> | undefined;
+    let closed = false;
     return {
       name: `frpForwardPlugin${this.port}`,
       enforce: "pre",
       configResolved: async () => {
         vite.mergeState({ frpForward: { url: nginx.url } });
       },
-      configureServer: async server => {
-        const start = async () => {
-          const forward = await this.getRemote();
-          await nginx.makeRemote();
-          server.httpServer?.once("close", () => {
-            void (async () => {
-              await forward.close();
-              await nginx.closeRemote();
-            })().catch(error => console.error("关闭 frp 转发和 Nginx 路由失败", error));
+      configureServer: server => {
+        const httpServer = server.httpServer;
+        if (!httpServer) return;
+
+        const start = async (): Promise<void> => {
+          if (started) return;
+          if (starting) return starting;
+          starting = (async () => {
+            let forward: Awaited<ReturnType<typeof this.getRemote>> | undefined;
+            try {
+              forward = await this.getRemote();
+              await nginx.makeRemote();
+              const activeForward = forward;
+              started = true;
+              httpServer.once("close", () => {
+                closed = true;
+                void (async () => {
+                  await nginx.closeRemote();
+                  await activeForward.close();
+                })().catch(error => console.error("关闭 frp 转发和 Nginx 路由失败", error));
+              });
+            } catch (error) {
+              await forward?.close().catch(cleanupError => {
+                console.error("回滚 frp 转发失败", cleanupError);
+              });
+              throw error;
+            } finally {
+              starting = undefined;
+            }
+          })();
+          return starting;
+        };
+
+        const onListening = () => {
+          if (closed) return;
+          void start().catch(error => {
+            console.error("启动 frp 转发和 Nginx 路由失败", error);
           });
         };
-        if (!server.httpServer || server.httpServer.listening) {
-          await start();
-          return;
-        }
-        server.httpServer.once("listening", () => {
-          void start().catch(error => console.error("启动 frp 转发和 Nginx 路由失败", error));
-        });
+        if (httpServer.listening) onListening();
+        else httpServer.once("listening", onListening);
       },
     };
   }
 
   protected async setup(): Promise<void> {
-    const config = store.getState().frp;
-    
+    const config = { ...this.envs.frp, service: "frps.service", serverPort: 7000 };
+
     const ssh = new Ssh();
     const sshConfig = await ssh.config();
     const root = ssh.quoteShellArg(config.root);
@@ -78,22 +107,22 @@ export default class extends Base {
       "    install -m 755 " + binary + " " + serverBinary,
       "  else",
       "    architecture=$(dpkg --print-architecture)",
-      "    archive=frp_" + frpVersion + "_linux_${architecture}.tar.gz",
+      "    archive=frp_" + this.envs.frp.packageVersion + "_linux_${architecture}.tar.gz",
       "    temp=$(mktemp -d)",
-      "    curl -fL --retry 3 --connect-timeout 10 --max-time 180 https://github.com/fatedier/frp/releases/download/v" + frpVersion + "/$archive -o \"$temp/frp.tar.gz\"",
+      "    curl -fL --retry 3 --connect-timeout 10 --max-time 180 https://github.com/fatedier/frp/releases/download/v" + this.envs.frp.packageVersion + "/$archive -o \"$temp/frp.tar.gz\"",
       "    tar -xzf \"$temp/frp.tar.gz\" -C \"$temp\"",
-      "    install -m 755 \"$temp/frp_" + frpVersion + "_linux_${architecture}/frps\" " + serverBinary,
+      "    install -m 755 \"$temp/frp_" + this.envs.frp.packageVersion + "_linux_${architecture}/frps\" " + serverBinary,
       "    rm -rf \"$temp\"",
       "  fi",
       "fi",
       "ln -sfn " + serverBinary + " " + binary,
       "if [ ! -f " + configFile + " ]; then",
       "  token=$(openssl rand -hex 32)",
-      "  printf \"bindPort = %s\\nvhostHTTPPort = 8080\\nproxyBindAddr = \\\"127.0.0.1\\\"\\nauth.method = \\\"token\\\"\\nauth.token = \\\"%s\\\"\\nlog.to = \\\"/var/log/frps.log\\\"\\nlog.level = \\\"info\\\"\\nlog.maxDays = 7\\n\" " + config.serverPort + " \"$token\" > " + configFile,
+      "  printf \"bindPort = %s\\nvhostHTTPPort = 8080\\nproxyBindAddr = \\\"127.0.0.1\\\"\\nauth.method = \\\"token\\\"\\nauth.token = \\\"%s\\\"\\nlog.to = \\\"" + config.log + "\\\"\\nlog.level = \\\"info\\\"\\nlog.maxDays = 7\\n\" " + config.serverPort + " \"$token\" > " + configFile,
       "  chmod 600 " + configFile,
       "fi",
       "grep -q \"^bindPort = " + config.serverPort + "$\" " + configFile,
-      "cat > /etc/systemd/system/" + config.service + " <<\"UNIT\"",
+      "cat > " + config.systemdDirectory + "/" + config.service + " <<\"UNIT\"",
       "[Unit]",
       "Description=FRP server for extends-ssh",
       "After=network-online.target",
@@ -163,19 +192,19 @@ export default class extends Base {
     const configDirectory = await mkdtemp(path.join(os.tmpdir(), "extends-ssh-frpc-"));
     const configPath = path.join(configDirectory, "frpc.toml");
     await writeFile(configPath, [
-      `serverAddr = ${JSON.stringify(serverConfig.serverAddr)}` ,
-      `serverPort = ${String(serverConfig.bindPort)}` ,
-      `auth.method = "token"` ,
-      `auth.token = ${JSON.stringify(serverConfig.token)}` ,
-      `transport.tls.enable = true` ,
-      `transport.protocol = "tcp"` ,
+      `serverAddr = ${JSON.stringify(serverConfig.serverAddr)}`,
+      `serverPort = ${String(serverConfig.bindPort)}`,
+      `auth.method = "token"`,
+      `auth.token = ${JSON.stringify(serverConfig.token)}`,
+      `transport.tls.enable = true`,
+      `transport.protocol = "tcp"`,
       "",
       "[[proxies]]",
-      `name = ${JSON.stringify(`extends-ssh-${this.port}`)}` ,
-      `type = "tcp"` ,
-      `localIP = "127.0.0.1"` ,
-      `localPort = ${String(this.port)}` ,
-      `remotePort = ${String(this.port)}` ,
+      `name = ${JSON.stringify(`extends-ssh-${this.port}`)}`,
+      `type = "tcp"`,
+      `localIP = "127.0.0.1"`,
+      `localPort = ${String(this.port)}`,
+      `remotePort = ${String(this.port)}`,
     ].join("\n"), { encoding: "utf8", mode: 0o600 });
 
     const child = spawn(clientBinary, ["-c", configPath], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
@@ -222,15 +251,16 @@ export default class extends Base {
     const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : undefined;
     const architecture = process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : undefined;
     if (!platform || !architecture) throw new Error(`当前平台不支持自动下载 frpc: ${process.platform}/${process.arch}`);
-    const packageName = `frp_${frpVersion}_${platform}_${architecture}`;
+    const packageName = `frp_${this.envs.frp.packageVersion}_${platform}_${architecture}`;
     const extension = platform === "windows" ? "zip" : "tar.gz";
-    const cacheDirectory = path.resolve(path.dirname(fileURLToPath(new URL("../package.json", import.meta.url))), ".extends-ssh", "frp");
+    // FRP 客户端下载缓存统一放在仓库根目录，和持久化 store 共用项目级缓存目录。
+    const cacheDirectory = path.resolve(path.dirname(fileURLToPath(new URL("../../package.json", import.meta.url))), ".extends-ssh", "frp");
     const binaryPath = path.join(cacheDirectory, `${packageName}-frpc${platform === "windows" ? ".exe" : ""}`);
     await mkdir(cacheDirectory, { recursive: true });
     let cacheError: unknown;
     try { await this.assertClientBinary(binaryPath); return binaryPath; } catch (error) { cacheError = error; }
     const archivePath = path.join(cacheDirectory, `${packageName}.${extension}`);
-    const response = await fetch(`https://github.com/fatedier/frp/releases/download/v${frpVersion}/${packageName}.${extension}`, { signal: AbortSignal.timeout(60_000) });
+    const response = await fetch(`https://github.com/fatedier/frp/releases/download/v${this.envs.frp.packageVersion}/${packageName}.${extension}`, { signal: AbortSignal.timeout(60_000) });
     if (!response.ok) throw new Error(`下载 frpc 失败: HTTP ${response.status}；缓存检查失败: ${String(cacheError)}`);
     await writeFile(archivePath, Buffer.from(await response.arrayBuffer()));
     const extractDirectory = await mkdtemp(path.join(cacheDirectory, "extract-"));

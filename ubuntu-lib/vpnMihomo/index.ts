@@ -1,4 +1,4 @@
-﻿import Base from "../public/index.ts";
+import Base from "../public/index.ts";
 import { subscriptionUrlValidator } from "./zod.ts";
 import Ssh from "../ssh/index.ts";
 import store from "../store.ts";
@@ -11,9 +11,9 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends ca-certificates curl gzip iproute2 iptables python3 python3-yaml >/dev/null
-mkdir -p /etc/mihomo
-chmod 700 /etc/mihomo
-if [ ! -x /usr/local/bin/mihomo ]; then
+mkdir -p ${this.envs.vpnMihomo.root}
+chmod 700 ${this.envs.vpnMihomo.root}
+if [ ! -x ${this.envs.vpnMihomo.binary} ]; then
   release_json=$(mktemp)
   asset_url=$(mktemp)
   curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 ${ssh.quoteShellArg("https://api.github.com/repos/MetaCubeX/mihomo/releases/latest")} -o "$release_json"
@@ -35,12 +35,12 @@ if not candidates:
     raise SystemExit(f"没有找到 Mihomo Linux amd64 发布包：{prefix}")
 print(candidates[0])
 PY
-  curl -fsSL --retry 3 --connect-timeout 10 --max-time 120 "$(cat "$asset_url")" | gzip -d > /usr/local/bin/mihomo
-  chmod 755 /usr/local/bin/mihomo
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 120 "$(cat "$asset_url")" | gzip -d > ${this.envs.vpnMihomo.binary}
+  chmod 755 ${this.envs.vpnMihomo.binary}
   rm -f "$release_json" "$asset_url"
 fi
-/usr/local/bin/mihomo -v >/dev/null
-cat > /etc/systemd/system/cloud-mihomo.service <<'UNIT'
+${this.envs.vpnMihomo.binary} -v >/dev/null
+cat > ${this.envs.vpnMihomo.systemdDirectory}/cloud-mihomo.service <<'UNIT'
 [Unit]
 Description=Mihomo cloud-wide proxy
 After=network-online.target
@@ -48,7 +48,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/mihomo -d /etc/mihomo
+ExecStart=${this.envs.vpnMihomo.binary} -d ${this.envs.vpnMihomo.root}
 Restart=always
 RestartSec=3
 LimitNOFILE=1048576
@@ -61,8 +61,8 @@ systemctl enable cloud-mihomo.service >/dev/null
 `);
     const healthy = (await ssh.execute(`
 if systemctl is-active --quiet cloud-mihomo.service \
-  && test -s /etc/mihomo/config.yaml \
-  && /usr/local/bin/mihomo -t -d /etc/mihomo >/dev/null 2>&1; then
+  && test -s ${this.envs.vpnMihomo.config} \
+  && ${this.envs.vpnMihomo.binary} -t -d ${this.envs.vpnMihomo.root} >/dev/null 2>&1; then
   printf yes
 else
   printf no
@@ -98,7 +98,7 @@ set -e
 subscription_response=$(mktemp)
 trap 'rm -f "$subscription_response"' EXIT
 curl -fsSL --compressed --retry 3 --connect-timeout 10 --max-time 120 --url ${ssh.quoteShellArg(subscriptionUrl)} -o "$subscription_response"
-python3 - "$subscription_response" /etc/mihomo/config.yaml <<'PY'
+python3 - "$subscription_response" ${this.envs.vpnMihomo.config} <<'PY'
 import base64
 import pathlib
 import sys
@@ -122,9 +122,9 @@ PY
 `);
     await ssh.execute(`
 set -e
-test -s /etc/mihomo/config.yaml
-test -x /usr/local/bin/mihomo
-python3 - /etc/mihomo/config.yaml <<'PY'
+test -s ${this.envs.vpnMihomo.config}
+test -x ${this.envs.vpnMihomo.binary}
+python3 - ${this.envs.vpnMihomo.config} <<'PY'
 import pathlib
 import sys
 import yaml
@@ -176,8 +176,8 @@ dns["fake-ip-filter"] = ${JSON.stringify(vpnState.dns.fakeIpFilter)}
 config["dns"] = dns
 target_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
 PY
-chmod 600 /etc/mihomo/config.yaml
-/usr/local/bin/mihomo -t -d /etc/mihomo
+chmod 600 ${this.envs.vpnMihomo.config}
+${this.envs.vpnMihomo.binary} -t -d ${this.envs.vpnMihomo.root}
 systemctl restart cloud-mihomo.service
 systemctl is-active --quiet cloud-mihomo.service
 `);

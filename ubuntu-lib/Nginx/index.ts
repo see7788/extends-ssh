@@ -1,19 +1,18 @@
-﻿import Base from "../public/index.ts";
+import Base from "../public/index.ts";
 import LetsEncrypt from "../letsencrypt/index.ts";
 import { posix } from "node:path";
 import Ssh from "../ssh/index.ts";
-import store from "../store.ts";
 
 export default class extends Base {
   constructor(
     private readonly service: "sftp" | "pm2" | "forward",
-    private readonly input: number | `${string}/${number}` | `/www/wwwroot/extends-ssh/${number}`,
+    private readonly input: number | string,
   ) {
     super();
   }
   protected async setup(): Promise<void> {
     const ssh = new Ssh();
-    const { binary, config } = store.getState().nginx;
+    const { binary, config } = this.envs.nginx;
     await ssh.execute(`set -e
 NGINX=${ssh.quoteShellArg(binary)}
 CONFIG=${ssh.quoteShellArg(config)}
@@ -51,7 +50,7 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
       : `  location / { root ${this.input}; index index.html; try_files $uri $uri/ =404; }`;
     const certificate = new LetsEncrypt();
     const ssh = new Ssh();
-    const nginx = store.getState().nginx;
+    const nginx = this.envs.nginx;
     const nginxRoot = nginx.root;
     const subdomain = this.remoteDescription();
     const route = this.routePath();
@@ -84,7 +83,7 @@ ${ssh.quoteShellArg(nginx.binary)} -s reload -c ${ssh.quoteShellArg(nginx.config
   async closeRemote(): Promise<void> {
     await this.setupReady();
     const ssh = new Ssh();
-    const { binary, config } = store.getState().nginx;
+    const { binary, config } = this.envs.nginx;
     await ssh.execute(`set -e
 rm -f ${ssh.quoteShellArg(this.routePath())}
 ${ssh.quoteShellArg(binary)} -t -c ${ssh.quoteShellArg(config)}
@@ -94,7 +93,7 @@ ${ssh.quoteShellArg(binary)} -s reload -c ${ssh.quoteShellArg(config)}`);
     return typeof this.input === "number" ? this.input : Number(posix.basename(this.input));
   }
   private routePath(): string {
-    return `${store.getState().nginx.root}/extends-ssh-${this.service}-${this.port}.conf`;
+    return `${this.envs.nginx.root}/extends-ssh-${this.service}-${this.port}.conf`;
   }
   private remoteDescription(): string {
     return `${this.port}.${this.service}.${this.domain}`;

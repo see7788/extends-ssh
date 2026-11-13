@@ -1,4 +1,4 @@
-﻿import Base from "../public/index.ts";
+import Base from "../public/index.ts";
 import path from "node:path";
 import Apt from "../apt/index.ts";
 import Ssh from "../ssh/index.ts";
@@ -14,14 +14,14 @@ export default class extends Base {
   vitePlugin_kasmUi(): Plugin {
     let outputDirectory!: string;
     return {
-      name: "vitePlugin_kasm",
+      name: "kasmVnc_kasmUi",
       enforce: "post",
       configResolved: config => {
         outputDirectory = path.resolve(config.root, config.build.outDir);
       },
       closeBundle: async () => {
         try {
-          await new Sftp().upload(outputDirectory, store.getState().kasmVnc.server.httpdDirectory);
+          await new Sftp().upload(outputDirectory, this.envs.kasmVnc.httpdRoot);
           console.log("sftp success");
           await this.set(this.index);
           console.log(`set(${this.index}) success`);
@@ -35,14 +35,14 @@ export default class extends Base {
   vitePlugin_chromiumExtension(): Plugin {
     let outputDirectory!: string;
     return {
-      name: "vitePlugin_chromium",
+      name: "kasmVnc_chromium",
       enforce: "post",
       configResolved: config => {
         outputDirectory = path.resolve(config.root, config.build.outDir);
       },
       closeBundle: async () => {
         try {
-          const extensionDirectory = store.getState().kasmVnc.chromium.extensionDirectory;
+          const extensionDirectory = this.envs.kasmVnc.chromiumExtensionRoot;
           await new Sftp().upload(outputDirectory, extensionDirectory);
           console.log("sftp success");
           await this.set(this.index);
@@ -53,11 +53,10 @@ export default class extends Base {
       },
     };
   }
-
   async setup(): Promise<void> {
     const index = this.index;
     const sessionService = this.sessionService(index);
-    const install = store.getState().kasmVnc.server;
+    const install = { ...store.getState().kasmVnc.server, httpdDirectory: this.envs.kasmVnc.httpdRoot };
     const aptPackages = install.aptPackages.join(" ");
     const apt = new Apt();
     const ssh = new Ssh();
@@ -105,7 +104,7 @@ systemctl start ${ssh.quoteShellArg(sessionService)}
 
   private async apply(index: number): Promise<void> {
     const config = this.config(index);
-    const httpdDirectory = store.getState().kasmVnc.server.httpdDirectory;
+    const httpdDirectory = this.envs.kasmVnc.httpdRoot;
     const type = config.application.type;
     if (type === "chromium") {
       await this.setChromium(index);
@@ -117,7 +116,7 @@ systemctl start ${ssh.quoteShellArg(sessionService)}
     const application = config.application;
     const sessionService = this.sessionService(index);
     const user = this.sessionUser(index);
-    const home = `/home/${user}`;
+    const home = `${this.envs.kasmVnc.homeRoot}/${user}`;
     const geometry = `${config.resolution.width}x${config.resolution.height}`;
     const ssh = new Ssh();
     const ports = new Set<number>();
@@ -162,7 +161,7 @@ chmod 600 ${ssh.quoteShellArg(home + "/.kasmpasswd")}
 set -e
 mkdir -p ${ssh.quoteShellArg(httpdDirectory)}
 if [ ! -f ${ssh.quoteShellArg(httpdDirectory + "/index.html")} ]; then
-cp -a /usr/share/kasmvnc/www/. ${ssh.quoteShellArg(httpdDirectory)}/
+cp -a ${this.envs.kasmVnc.packageWebRoot}/. ${ssh.quoteShellArg(httpdDirectory)}/
 fi
 ${basicAuthSetup}
 cat > ${ssh.quoteShellArg(home + "/.vnc/kasmvnc.yaml")} <<'YAML'
@@ -192,7 +191,7 @@ command_line:
   prompt: ${config.commandLinePrompt}
 YAML
 chown ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(home + "/.vnc/kasmvnc.yaml")}
-cat > ${ssh.quoteShellArg("/etc/systemd/system/" + sessionService)} <<'UNIT'
+cat > ${ssh.quoteShellArg(this.envs.kasmVnc.systemdDirectory + "/" + sessionService)} <<'UNIT'
 [Unit]
 Description=KasmVNC ${application.type} ${index}
 After=network-online.target${type === "chromium" ? " snapd.service" : ""}
@@ -206,8 +205,8 @@ Environment=HOME=${home}
 Environment=USER=${user}
 RuntimeDirectory=kasm-vnc-${index}
 RuntimeDirectoryMode=0700
-ExecStart=/usr/bin/vncserver ${config.display} -geometry ${geometry} -depth ${config.pixelDepth} -websocketPort ${config.port} ${vncOptions} -httpd ${httpdDirectory} -xstartup ${home}/.vnc/xstartup
-ExecStop=/usr/bin/vncserver -kill ${config.display}
+ExecStart=${this.envs.kasmVnc.vncBinary} ${config.display} -geometry ${geometry} -depth ${config.pixelDepth} -websocketPort ${config.port} ${vncOptions} -httpd ${httpdDirectory} -xstartup ${home}/.vnc/xstartup
+ExecStop=${this.envs.kasmVnc.vncBinary} -kill ${config.display}
 Restart=${config.systemd.restart}
 RestartSec=${config.systemd.restartSec}
 
@@ -226,10 +225,10 @@ systemctl restart ${ssh.quoteShellArg(sessionService)}
     const application = config.application;
     if (application.type !== "chromium") throw new Error(`KasmVNC application is not implemented: ${application.type}`);
     const chromium = application;
-    const install = store.getState().kasmVnc.chromium;
+    const install = { ...store.getState().kasmVnc.chromium, binary: this.envs.kasmVnc.chromiumBinary, extensionDirectory: this.envs.kasmVnc.chromiumExtensionRoot, dataDir: this.envs.kasmVnc.chromiumDataRoot, targetRoot: this.envs.kasmVnc.chromiumTargetRoot };
     const aptPackages = install.aptPackages.join(" ");
     const user = this.sessionUser(index);
-    const home = `/home/${user}`;
+    const home = `${this.envs.kasmVnc.homeRoot}/${user}`;
     const targetFile = `${install.targetRoot}/${index}/target-url`;
     const chromiumDataDir = `${this.directory(install.dataDir, "Chromium dataDir")}${this.instanceSuffix(index)}`;
     const extensionDirectory = this.directory(install.extensionDirectory, "Chromium extensionDirectory");
@@ -301,10 +300,10 @@ chown ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(
     const config = this.config(index);
     const application = config.application;
     if (application.type !== "desktop") throw new Error(`KasmVNC application is not implemented: ${application.type}`);
-    const install = store.getState().kasmVnc.desktop;
+    const install = { ...store.getState().kasmVnc.desktop, dataDir: this.envs.kasmVnc.desktopDataRoot };
     const aptPackages = install.aptPackages.join(" ");
     const user = this.sessionUser(index);
-    const home = `/home/${user}`;
+    const home = `${this.envs.kasmVnc.homeRoot}/${user}`;
     const chromiumDataDir = `${this.directory(install.dataDir, "Desktop dataDir")}${this.instanceSuffix(index)}`;
     const ssh = new Ssh();
     const apt = new Apt();
@@ -350,10 +349,10 @@ chown ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(
     const config = this.config(index);
     if (config.application.type !== "wechat") throw new Error(`KasmVNC application is not implemented: ${config.application.type}`);
     const application = config.application;
-    const install = store.getState().kasmVnc.wechat;
+    const install = { ...store.getState().kasmVnc.wechat, binary: this.envs.kasmVnc.wechatBinary, dataDir: this.envs.kasmVnc.wechatDataRoot, filesDir: this.envs.kasmVnc.wechatFilesRoot };
     const aptPackages = install.aptPackages.join(" ");
     const user = this.sessionUser(index);
-    const home = `/home/${user}`;
+    const home = `${this.envs.kasmVnc.homeRoot}/${user}`;
     const dataBaseDir = this.directory(install.dataDir, "WeChat dataDir");
     const filesBaseDir = this.directory(install.filesDir, "WeChat filesDir");
     const dataRoot = path.posix.dirname(dataBaseDir);
@@ -433,12 +432,12 @@ systemctl stop ${ssh.quoteShellArg(sessionService)}
     const config = this.config(index);
     const sessionService = this.sessionService(index);
     const user = this.sessionUser(index);
-    const home = `/home/${user}`;
-    const targetFile = `${store.getState().kasmVnc.chromium.targetRoot}/${index}/target-url`;
+    const home = `${this.envs.kasmVnc.homeRoot}/${user}`;
+    const targetFile = `${this.envs.kasmVnc.chromiumTargetRoot}/${index}/target-url`;
     const ssh = new Ssh();
     await ssh.execute(`
 systemctl disable --now ${ssh.quoteShellArg(sessionService)} >/dev/null 2>&1 || true
-rm -f ${ssh.quoteShellArg("/etc/systemd/system/" + sessionService)}
+rm -f ${ssh.quoteShellArg(this.envs.kasmVnc.systemdDirectory + "/" + sessionService)}
 systemctl daemon-reload
 ufw delete allow ${config.port}/tcp >/dev/null 2>&1 || true
 rm -rf ${ssh.quoteShellArg(targetFile.substring(0, targetFile.lastIndexOf("/")))} ${ssh.quoteShellArg(home)}

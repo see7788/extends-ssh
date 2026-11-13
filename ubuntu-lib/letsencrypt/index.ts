@@ -1,7 +1,6 @@
-﻿import Base from "../public/index.ts";
+import Base from "../public/index.ts";
 import { hostnameValidator } from "./zod.ts";
 import Ssh from "../ssh/index.ts";
-import store from "../store.ts";
 
 export default class extends Base {
   protected async setup(): Promise<void> {
@@ -21,12 +20,12 @@ python3 -c 'import certbot_nginx'`);
     const normalizedHostname = hostnameValidator.parse(hostname);
     await this.setupReady();
     const ssh = new Ssh();
-    const certificateRoot = store.getState().letsencrypt.root;
+    const certificateRoot = this.envs.letsencrypt.certificates;
     const certificateBase = `${certificateRoot}/${normalizedHostname}`;
     const certPath = `${certificateBase}/fullchain.pem`;
     const keyPath = `${certificateBase}/privkey.pem`;
-    const letsEncryptBase = `/etc/letsencrypt/live/${normalizedHostname}`;
-    const hookPath = `/etc/letsencrypt/renewal-hooks/deploy/extends-ssh-${normalizedHostname}.sh`;
+    const letsEncryptBase = `${this.envs.letsencrypt.live}/${normalizedHostname}`;
+    const hookPath = `${this.envs.letsencrypt.renewalHooks}/extends-ssh-${normalizedHostname}.sh`;
     await ssh.execute(`set -e
 CERTIFICATE_BASE=${ssh.quoteShellArg(certificateBase)}
 LETS_ENCRYPT_BASE=${ssh.quoteShellArg(letsEncryptBase)}
@@ -45,14 +44,14 @@ if ! test -s "\$CERTIFICATE_BASE/fullchain.pem" \
   install -m 0644 "\$LETS_ENCRYPT_BASE/fullchain.pem" "\$CERTIFICATE_BASE/fullchain.pem"
   install -m 0600 "\$LETS_ENCRYPT_BASE/privkey.pem" "\$CERTIFICATE_BASE/privkey.pem"
 fi
-mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+mkdir -p ${ssh.quoteShellArg(this.envs.letsencrypt.renewalHooks)}
 cat > ${ssh.quoteShellArg(hookPath)} <<'HOOK'
 #!/bin/sh
 set -e
 DOMAIN=${normalizedHostname}
 CERTIFICATE_BASE=${ssh.quoteShellArg(certificateBase)}
-install -m 0644 /etc/letsencrypt/live/$DOMAIN/fullchain.pem "$CERTIFICATE_BASE/fullchain.pem"
-install -m 0600 /etc/letsencrypt/live/$DOMAIN/privkey.pem "$CERTIFICATE_BASE/privkey.pem"
+install -m 0644 ${this.envs.letsencrypt.live}/$DOMAIN/fullchain.pem "$CERTIFICATE_BASE/fullchain.pem"
+install -m 0600 ${this.envs.letsencrypt.live}/$DOMAIN/privkey.pem "$CERTIFICATE_BASE/privkey.pem"
 ${ssh.quoteShellArg(nginxBinary)} -t -c ${ssh.quoteShellArg(nginxConfig)}
 ${ssh.quoteShellArg(nginxBinary)} -s reload -c ${ssh.quoteShellArg(nginxConfig)}
 HOOK
