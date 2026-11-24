@@ -7,10 +7,6 @@ const vpnMihomoStore: ImmerStateCreator<{
       groupName: string;
       proxyName: string;
     };
-    mixedPort: number;
-    socksPort: number;
-    redirPort: number;
-    externalController: string;
     tunName: string;
     tunStack: string;
     tunAutoRoute: boolean; // true=自动配置路由；false=不自动配置路由
@@ -20,7 +16,6 @@ const vpnMihomoStore: ImmerStateCreator<{
     allowLan: boolean; // true=允许局域网访问；false=仅允许本机访问
     dns: {
       enable: boolean; // true=启用 DNS；false=禁用 DNS
-      listen: string;
       enhancedMode: string;
       nameservers: string[];
       fakeIpFilter: string[];
@@ -33,10 +28,6 @@ const vpnMihomoStore: ImmerStateCreator<{
       groupName: "",
       proxyName: "",
     },
-    mixedPort: 7_890,
-    socksPort: 7_891,
-    redirPort: 7_892,
-    externalController: "127.0.0.1:9_090",
     tunName: "mihomo",
     tunStack: "system",
     tunAutoRoute: true,
@@ -46,7 +37,6 @@ const vpnMihomoStore: ImmerStateCreator<{
     allowLan: false,
     dns: {
       enable: true,
-      listen: "127.0.0.1:7_895",
       enhancedMode: "fake-ip",
       nameservers: ["223.5.5.5", "1.1.1.1"],
       fakeIpFilter: [

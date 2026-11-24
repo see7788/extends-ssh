@@ -5,6 +5,7 @@
 // 宝塔面板：https://82.156.162.242:22947/d9450c6f
 // 宝塔用户名：hazwa0sx
 // 宝塔密码：9K78s98[98]j.9
+//npx.cmd --yes @wonderwhy-er/desktop-commander@latest remote
 const sshStore: ImmerStateCreator<{
   ssh: {
     host: string;

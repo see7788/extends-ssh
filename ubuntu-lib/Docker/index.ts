@@ -9,7 +9,7 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 if ! command -v docker >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y -qq --no-install-recommends docker.io >/dev/null
+  apt-get install -y -qq --no-install-recommends ${ssh.quoteShellArg(this.envs.docker.packageName)} >/dev/null
 fi
 systemctl enable docker --now >/dev/null
 systemctl is-active --quiet docker

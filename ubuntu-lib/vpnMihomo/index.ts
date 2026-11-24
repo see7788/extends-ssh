@@ -10,14 +10,14 @@ export default class extends Base {
 set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends ca-certificates curl gzip iproute2 iptables python3 python3-yaml >/dev/null
+apt-get install -y -qq --no-install-recommends ${this.envs.vpnMihomo.aptPackages.join(" ")} >/dev/null
 mkdir -p ${this.envs.vpnMihomo.root}
 chmod 700 ${this.envs.vpnMihomo.root}
 if [ ! -x ${this.envs.vpnMihomo.binary} ]; then
   release_json=$(mktemp)
   asset_url=$(mktemp)
-  curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 ${ssh.quoteShellArg("https://api.github.com/repos/MetaCubeX/mihomo/releases/latest")} -o "$release_json"
-  python3 - "$release_json" ${ssh.quoteShellArg("mihomo-linux-amd64")} > "$asset_url" <<'PY'
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 ${ssh.quoteShellArg(this.envs.vpnMihomo.releaseApi)} -o "$release_json"
+  python3 - "$release_json" ${ssh.quoteShellArg(this.envs.vpnMihomo.assetPrefix)} > "$asset_url" <<'PY'
 import json
 import pathlib
 import sys
@@ -40,7 +40,7 @@ PY
   rm -f "$release_json" "$asset_url"
 fi
 ${this.envs.vpnMihomo.binary} -v >/dev/null
-cat > ${this.envs.vpnMihomo.systemdDirectory}/cloud-mihomo.service <<'UNIT'
+cat > ${this.envs.vpnMihomo.systemdDirectory}/${this.envs.vpnMihomo.service} <<'UNIT'
 [Unit]
 Description=Mihomo cloud-wide proxy
 After=network-online.target
@@ -50,17 +50,17 @@ Wants=network-online.target
 Type=simple
 ExecStart=${this.envs.vpnMihomo.binary} -d ${this.envs.vpnMihomo.root}
 Restart=always
-RestartSec=3
+RestartSec=${this.envs.vpnMihomo.restartSec}
 LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
-systemctl enable cloud-mihomo.service >/dev/null
+systemctl enable ${this.envs.vpnMihomo.service} >/dev/null
 `);
     const healthy = (await ssh.execute(`
-if systemctl is-active --quiet cloud-mihomo.service \
+if systemctl is-active --quiet ${this.envs.vpnMihomo.service} \
   && test -s ${this.envs.vpnMihomo.config} \
   && ${this.envs.vpnMihomo.binary} -t -d ${this.envs.vpnMihomo.root} >/dev/null 2>&1; then
   printf yes
@@ -75,9 +75,9 @@ fi
     const ssh = new Ssh();
     await ssh.execute(`
 set -e
-systemctl stop cloud-mihomo.service
-if systemctl is-active --quiet cloud-mihomo.service; then
-  echo "cloud-mihomo.service 停止失败" >&2
+systemctl stop ${this.envs.vpnMihomo.service}
+if systemctl is-active --quiet ${this.envs.vpnMihomo.service}; then
+  echo "${this.envs.vpnMihomo.service} 停止失败" >&2
   exit 1
 fi
 `);
@@ -150,12 +150,12 @@ if selection_group_name:
         raise SystemExit(f"代理组 {selection_group_name} 中没有节点：{selection_proxy_name}")
     group["proxies"] = [selection_proxy_name] + [item for item in proxies if item != selection_proxy_name]
 
-config["mixed-port"] = ${vpnState.mixedPort}
-config["socks-port"] = ${vpnState.socksPort}
-config["redir-port"] = ${vpnState.redirPort}
+config["mixed-port"] = ${this.envs.vpnMihomo.mixedPort}
+config["socks-port"] = ${this.envs.vpnMihomo.socksPort}
+config["redir-port"] = ${this.envs.vpnMihomo.redirPort}
 config["allow-lan"] = ${vpnState.allowLan ? "True" : "False"}
 config["mode"] = ${ssh.quoteShellArg(vpnState.mode)}
-config["external-controller"] = ${ssh.quoteShellArg(vpnState.externalController)}
+config["external-controller"] = ${ssh.quoteShellArg(this.envs.vpnMihomo.externalController)}
 tun = config.get("tun") if isinstance(config.get("tun"), dict) else {}
 tun.update({
     "enable": True,
@@ -168,7 +168,7 @@ tun.update({
 config["tun"] = tun
 dns = config.get("dns") if isinstance(config.get("dns"), dict) else {}
 dns["enable"] = ${vpnState.dns.enable ? "True" : "False"}
-dns["listen"] = ${ssh.quoteShellArg(vpnState.dns.listen)}
+dns["listen"] = ${ssh.quoteShellArg(this.envs.vpnMihomo.dnsListen)}
 dns["enhanced-mode"] = ${ssh.quoteShellArg(vpnState.dns.enhancedMode)}
 dns["nameserver"] = ${JSON.stringify(vpnState.dns.nameservers)}
 dns["fake-ip-filter-mode"] = "blacklist"
@@ -178,8 +178,8 @@ target_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=Fals
 PY
 chmod 600 ${this.envs.vpnMihomo.config}
 ${this.envs.vpnMihomo.binary} -t -d ${this.envs.vpnMihomo.root}
-systemctl restart cloud-mihomo.service
-systemctl is-active --quiet cloud-mihomo.service
+systemctl restart ${this.envs.vpnMihomo.service}
+systemctl is-active --quiet ${this.envs.vpnMihomo.service}
 `);
     store.setState(state => {
       state.vpnMihomo.subscriptionUrl = subscriptionUrl;

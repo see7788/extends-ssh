@@ -19,8 +19,8 @@ CONFIG=${ssh.quoteShellArg(config)}
 test -x "$NGINX"
 pgrep -f 'nginx: master process' >/dev/null
 "$NGINX" -t -c "$CONFIG" >/dev/null
-ufw allow 80/tcp >/dev/null 2>&1 || true
-ufw allow 443/tcp >/dev/null 2>&1 || true`);
+ufw allow ${this.envs.nginx.httpPort}/tcp >/dev/null 2>&1 || true
+ufw allow ${this.envs.nginx.httpsPort}/tcp >/dev/null 2>&1 || true`);
   }
   async getRemote(): Promise<{ readonly url: string; hasRemote(): Promise<boolean>; close(): Promise<void>; }> {
     await this.setupReady();
@@ -40,7 +40,7 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
     const route = this.routePath();
     const result = await ssh.execute(`if [ -f ${ssh.quoteShellArg(route)} ] \
   && grep -Fq -- ${ssh.quoteShellArg(`server_name ${subdomain};`)} ${ssh.quoteShellArg(route)} \
-  && grep -Fq -- ${ssh.quoteShellArg("listen 443 ssl;")} ${ssh.quoteShellArg(route)}; then printf true; else printf false; fi`);
+  && grep -Fq -- ${ssh.quoteShellArg(`listen ${this.envs.nginx.httpsPort} ssl;`)} ${ssh.quoteShellArg(route)}; then printf true; else printf false; fi`);
     return result.stdout.trim() === "true";
   }
   async makeRemote(): Promise<{ readonly url: string; hasRemote(): Promise<boolean>; close(): Promise<void>; }> {
@@ -59,16 +59,16 @@ ufw allow 443/tcp >/dev/null 2>&1 || true`);
 mkdir -p ${ssh.quoteShellArg(nginxRoot)}
 cat > ${ssh.quoteShellArg(route)} <<'NGINX'
 server {
-  listen 80;
+  listen ${nginx.httpPort};
   server_name ${subdomain};
   location / { return 301 https://$host$request_uri; }
 }
 server {
-  listen 443 ssl;
+  listen ${nginx.httpsPort} ssl;
   server_name ${subdomain};
   ssl_certificate ${certificatePaths.certPath};
   ssl_certificate_key ${certificatePaths.keyPath};
-  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_protocols ${nginx.tlsProtocols.join(" ")};
 ${location}
 }
 NGINX

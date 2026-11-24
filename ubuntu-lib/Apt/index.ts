@@ -8,7 +8,7 @@ export default class extends Base {
 set -e
 command -v apt-get >/dev/null 2>&1
 export DEBIAN_FRONTEND=noninteractive
-PACKAGES="lsof net-tools unzip wget ufw sudo curl git ca-certificates gnupg lsb-release xz-utils iproute2"
+PACKAGES="${this.envs.apt.packages.join(" ")}"
 MISSING=""
 for PACKAGE in $PACKAGES; do
   if ! dpkg -s "$PACKAGE" >/dev/null 2>&1; then MISSING="$MISSING $PACKAGE"; fi

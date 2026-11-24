@@ -4,7 +4,7 @@ import Ssh from "../ssh/index.ts";
 export default class extends Base {
   async setup(): Promise<void> {
     const ssh = new Ssh();
-    const { version, architecture, sha256 } = { version: this.envs.nodejs.packageVersion, architecture: "linux-x64", sha256: "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307" };
+    const { version, architecture, sha256 } = { version: this.envs.nodejs.packageVersion, architecture: this.envs.nodejs.architecture, sha256: this.envs.nodejs.sha256 };
     const archive = `node-v${version}-${architecture}.tar.xz`;
     const root = this.envs.nodejs.root;
     await ssh.execute(`set -e

@@ -62,7 +62,7 @@ export default class extends Base {
     const nodejs = new Nodejs();
     const ssh = new Ssh();
     await nodejs.setupReady();
-    await ssh.execute("set -e; if ! command -v pm2 >/dev/null 2>&1; then npm install -g pm2; fi; pm2 ping >/dev/null; pm2 save --force >/dev/null");
+    await ssh.execute(`set -e; if ! command -v pm2 >/dev/null 2>&1; then npm install -g ${this.envs.pm2.packageName}; fi; pm2 ping >/dev/null; pm2 save --force >/dev/null`);
   }
   async getRemote(port: number): Promise<{ readonly name: string; hasRemote(): Promise<boolean>; refresh(): Promise<"missing" | "stopped" | "running">; stop(): Promise<void>; restart(): Promise<void>; close(): Promise<void>; }> {
     await this.setupReady();

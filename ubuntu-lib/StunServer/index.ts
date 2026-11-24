@@ -3,18 +3,18 @@ import dgram from "node:dgram";
 import { randomBytes } from "node:crypto";
 import Docker from "../docker/index.ts";
 import Ssh from "../ssh/index.ts";
-import store from "../store.ts";
+
 
 export default class extends Base {
   get port(): number {
-    return store.getState().stunServer.port;
+    return this.envs.stunServer.port;
   }
   async setup(): Promise<void> {
     const docker = new Docker();
     const ssh = new Ssh();
-    const { stunServer } = store.getState();
+    const stunServer = this.envs.stunServer;
     const container = ssh.quoteShellArg(stunServer.containerName);
-    const image = ssh.quoteShellArg(stunServer.image);
+    const image = ssh.quoteShellArg(`${stunServer.imageName}:latest`);
     const restartPolicy = ssh.quoteShellArg(stunServer.restartPolicy);
     const mode = ssh.quoteShellArg(stunServer.mode);
     const { host } = await ssh.config();
@@ -22,7 +22,7 @@ export default class extends Base {
       throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
     }
     const { port: sshPort } = await ssh.config();
-    if (stunServer.port === sshPort || stunServer.port === 80 || stunServer.port === 443) {
+    if (stunServer.port === sshPort || Number(stunServer.port) === 80 || Number(stunServer.port) === 443) {
       throw new Error(`STUN 端口与固定服务端口冲突: ${String(stunServer.port)}`);
     }
     await docker.setupReady();
@@ -54,16 +54,16 @@ ss -lun | grep -Eq ':${stunServer.port}[[:space:]]'
   async update(): Promise<void> {
     await this.setupReady();
     const ssh = new Ssh();
-    const { stunServer } = store.getState();
+    const stunServer = this.envs.stunServer;
     const { host, port: sshPort } = await ssh.config();
     if (!Number.isInteger(stunServer.port) || stunServer.port < 1 || stunServer.port > 65_535) {
       throw new Error(`STUN 端口必须是 1-65535 的整数: ${String(stunServer.port)}`);
     }
-    if (stunServer.port === sshPort || stunServer.port === 80 || stunServer.port === 443) {
+    if (stunServer.port === sshPort || Number(stunServer.port) === 80 || Number(stunServer.port) === 443) {
       throw new Error(`STUN 端口与固定服务端口冲突: ${String(stunServer.port)}`);
     }
     const container = ssh.quoteShellArg(stunServer.containerName);
-    const image = ssh.quoteShellArg(stunServer.image);
+    const image = ssh.quoteShellArg(`${stunServer.imageName}:latest`);
     const restartPolicy = ssh.quoteShellArg(stunServer.restartPolicy);
     const mode = ssh.quoteShellArg(stunServer.mode);
     await new Docker().setupReady();

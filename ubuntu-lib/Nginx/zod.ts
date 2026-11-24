@@ -1,5 +1,5 @@
 ﻿import { posix } from "node:path";
-import { z } from "zod";
+import { z } from "mcpserver";
 
 const devPortValidator = z.number().int().min(1).max(65_535);
 const serviceValidator = z.enum(["sftp", "pm2", "forward"]);

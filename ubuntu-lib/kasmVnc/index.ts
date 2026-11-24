@@ -56,7 +56,7 @@ export default class extends Base {
   async setup(): Promise<void> {
     const index = this.index;
     const sessionService = this.sessionService(index);
-    const install = { ...store.getState().kasmVnc.server, httpdDirectory: this.envs.kasmVnc.httpdRoot };
+    const install = { aptPackages: this.envs.kasmVnc.serverAptPackages, releaseApi: this.envs.kasmVnc.releaseApi, packagePrefix: this.envs.kasmVnc.packagePrefix, httpdDirectory: this.envs.kasmVnc.httpdRoot };
     const aptPackages = install.aptPackages.join(" ");
     const apt = new Apt();
     const ssh = new Ssh();
@@ -225,7 +225,7 @@ systemctl restart ${ssh.quoteShellArg(sessionService)}
     const application = config.application;
     if (application.type !== "chromium") throw new Error(`KasmVNC application is not implemented: ${application.type}`);
     const chromium = application;
-    const install = { ...store.getState().kasmVnc.chromium, binary: this.envs.kasmVnc.chromiumBinary, extensionDirectory: this.envs.kasmVnc.chromiumExtensionRoot, dataDir: this.envs.kasmVnc.chromiumDataRoot, targetRoot: this.envs.kasmVnc.chromiumTargetRoot };
+    const install = { aptPackages: this.envs.kasmVnc.chromiumAptPackages, snapPackage: this.envs.kasmVnc.chromiumSnapPackage, binary: this.envs.kasmVnc.chromiumBinary, extensionDirectory: this.envs.kasmVnc.chromiumExtensionRoot, dataDir: this.envs.kasmVnc.chromiumDataRoot, targetRoot: this.envs.kasmVnc.chromiumTargetRoot };
     const aptPackages = install.aptPackages.join(" ");
     const user = this.sessionUser(index);
     const home = `${this.envs.kasmVnc.homeRoot}/${user}`;
@@ -247,14 +247,14 @@ for attempt in $(seq 1 30); do
   sleep 1
 done
 if ! snap list ${ssh.quoteShellArg(install.snapPackage)} >/dev/null 2>&1; then snap install ${ssh.quoteShellArg(install.snapPackage)} >/dev/null; fi
-if [ ! -s /etc/ssl/certs/ssl-cert-snakeoil.pem ] || [ ! -s /etc/ssl/private/ssl-cert-snakeoil.key ]; then
-  mkdir -p /etc/ssl/private /etc/ssl/certs
-  openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+if [ ! -s ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem ] || [ ! -s ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key ]; then
+  mkdir -p ${this.envs.kasmVnc.sslPrivateKeyRoot} ${this.envs.kasmVnc.sslCertificateRoot}
+  openssl req -x509 -nodes -newkey rsa:2048 -days ${this.envs.kasmVnc.sslCertificateValidityDays} \
     -subj "/CN=$(hostname)" \
-    -keyout /etc/ssl/private/ssl-cert-snakeoil.key \
-    -out /etc/ssl/certs/ssl-cert-snakeoil.pem >/dev/null 2>&1
-  chmod 600 /etc/ssl/private/ssl-cert-snakeoil.key
-  chmod 644 /etc/ssl/certs/ssl-cert-snakeoil.pem
+    -keyout ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key \
+    -out ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem >/dev/null 2>&1
+  chmod 600 ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key
+  chmod 644 ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem
 fi
 command -v vncserver >/dev/null 2>&1
 `);
@@ -300,7 +300,7 @@ chown ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(
     const config = this.config(index);
     const application = config.application;
     if (application.type !== "desktop") throw new Error(`KasmVNC application is not implemented: ${application.type}`);
-    const install = { ...store.getState().kasmVnc.desktop, dataDir: this.envs.kasmVnc.desktopDataRoot };
+    const install = { aptPackages: this.envs.kasmVnc.desktopAptPackages, dataDir: this.envs.kasmVnc.desktopDataRoot };
     const aptPackages = install.aptPackages.join(" ");
     const user = this.sessionUser(index);
     const home = `${this.envs.kasmVnc.homeRoot}/${user}`;
@@ -313,14 +313,14 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends ${aptPackages} >/dev/null
-if [ ! -s /etc/ssl/certs/ssl-cert-snakeoil.pem ] || [ ! -s /etc/ssl/private/ssl-cert-snakeoil.key ]; then
-  mkdir -p /etc/ssl/private /etc/ssl/certs
-  openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+if [ ! -s ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem ] || [ ! -s ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key ]; then
+  mkdir -p ${this.envs.kasmVnc.sslPrivateKeyRoot} ${this.envs.kasmVnc.sslCertificateRoot}
+  openssl req -x509 -nodes -newkey rsa:2048 -days ${this.envs.kasmVnc.sslCertificateValidityDays} \
     -subj "/CN=$(hostname)" \
-    -keyout /etc/ssl/private/ssl-cert-snakeoil.key \
-    -out /etc/ssl/certs/ssl-cert-snakeoil.pem >/dev/null 2>&1
-  chmod 600 /etc/ssl/private/ssl-cert-snakeoil.key
-  chmod 644 /etc/ssl/certs/ssl-cert-snakeoil.pem
+    -keyout ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key \
+    -out ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem >/dev/null 2>&1
+  chmod 600 ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key
+  chmod 644 ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem
 fi
 command -v vncserver >/dev/null 2>&1
 `);
@@ -349,7 +349,7 @@ chown ${ssh.quoteShellArg(user)}:${ssh.quoteShellArg(user)} ${ssh.quoteShellArg(
     const config = this.config(index);
     if (config.application.type !== "wechat") throw new Error(`KasmVNC application is not implemented: ${config.application.type}`);
     const application = config.application;
-    const install = { ...store.getState().kasmVnc.wechat, binary: this.envs.kasmVnc.wechatBinary, dataDir: this.envs.kasmVnc.wechatDataRoot, filesDir: this.envs.kasmVnc.wechatFilesRoot };
+    const install = { aptPackages: this.envs.kasmVnc.wechatAptPackages, packageUrl: this.envs.kasmVnc.wechatPackageUrl, binary: this.envs.kasmVnc.wechatBinary, dataDir: this.envs.kasmVnc.wechatDataRoot, filesDir: this.envs.kasmVnc.wechatFilesRoot };
     const aptPackages = install.aptPackages.join(" ");
     const user = this.sessionUser(index);
     const home = `${this.envs.kasmVnc.homeRoot}/${user}`;
@@ -375,14 +375,14 @@ for source in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
 done
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends ${aptPackages} >/dev/null
-if [ ! -s /etc/ssl/certs/ssl-cert-snakeoil.pem ] || [ ! -s /etc/ssl/private/ssl-cert-snakeoil.key ]; then
-  mkdir -p /etc/ssl/private /etc/ssl/certs
-  openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+if [ ! -s ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem ] || [ ! -s ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key ]; then
+  mkdir -p ${this.envs.kasmVnc.sslPrivateKeyRoot} ${this.envs.kasmVnc.sslCertificateRoot}
+  openssl req -x509 -nodes -newkey rsa:2048 -days ${this.envs.kasmVnc.sslCertificateValidityDays} \
     -subj "/CN=$(hostname)" \
-    -keyout /etc/ssl/private/ssl-cert-snakeoil.key \
-    -out /etc/ssl/certs/ssl-cert-snakeoil.pem >/dev/null 2>&1
-  chmod 600 /etc/ssl/private/ssl-cert-snakeoil.key
-  chmod 644 /etc/ssl/certs/ssl-cert-snakeoil.pem
+    -keyout ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key \
+    -out ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem >/dev/null 2>&1
+  chmod 600 ${this.envs.kasmVnc.sslPrivateKeyRoot}/ssl-cert-snakeoil.key
+  chmod 644 ${this.envs.kasmVnc.sslCertificateRoot}/ssl-cert-snakeoil.pem
 fi
 if ! command -v wechat >/dev/null 2>&1 && [ ! -x ${ssh.quoteShellArg(install.binary)} ]; then
   package=$(mktemp --suffix=.deb)
@@ -475,16 +475,16 @@ userdel --remove ${ssh.quoteShellArg(user)} >/dev/null 2>&1 || true
   private sessionService(index: number): string {
     const application = this.config(index).application.type;
     const suffix = this.instanceSuffix(index);
-    if (application === "chromium") return `cloud-kasm-chromium${suffix}.service`;
-    if (application === "wechat") return `cloud-kasm-wechat${suffix}.service`;
-    return `cloud-kasm-desktop${suffix}.service`;
+    if (application === "chromium") return `${this.envs.kasmVnc.servicePrefix}chromium${suffix}.service`;
+    if (application === "wechat") return `${this.envs.kasmVnc.servicePrefix}wechat${suffix}.service`;
+    return `${this.envs.kasmVnc.servicePrefix}desktop${suffix}.service`;
   }
 
   private sessionUser(index: number): string {
     const application = this.config(index).application.type;
     const suffix = this.instanceSuffix(index);
-    if (application === "chromium") return `chromium-browser${suffix}`;
-    if (application === "wechat") return `wechat${suffix}`;
-    return `kasm-desktop${suffix}`;
+    if (application === "chromium") return `${this.envs.kasmVnc.userNames.chromium}${suffix}`;
+    if (application === "wechat") return `${this.envs.kasmVnc.userNames.wechat}${suffix}`;
+    return `${this.envs.kasmVnc.userNames.desktop}${suffix}`;
   }
 }

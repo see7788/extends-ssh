@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+﻿import { z } from "mcpserver";
 
 const devPortValidator = z.number().int().min(1).max(65_535);
 export const processValidator = z.object({

@@ -90,7 +90,7 @@ export default class extends Base {
   }
 
   protected async setup(): Promise<void> {
-    const config = { ...this.envs.frp, service: "frps.service", serverPort: 7000 };
+    const config = this.envs.frp;
 
     const ssh = new Ssh();
     const sshConfig = await ssh.config();
@@ -118,7 +118,7 @@ export default class extends Base {
       "ln -sfn " + serverBinary + " " + binary,
       "if [ ! -f " + configFile + " ]; then",
       "  token=$(openssl rand -hex 32)",
-      "  printf \"bindPort = %s\\nvhostHTTPPort = 8080\\nproxyBindAddr = \\\"127.0.0.1\\\"\\nauth.method = \\\"token\\\"\\nauth.token = \\\"%s\\\"\\nlog.to = \\\"" + config.log + "\\\"\\nlog.level = \\\"info\\\"\\nlog.maxDays = 7\\n\" " + config.serverPort + " \"$token\" > " + configFile,
+      "  printf \"bindPort = %s\\nvhostHTTPPort = %s\\nproxyBindAddr = \\\"%s\\\"\\nauth.method = \\\"token\\\"\\nauth.token = \\\"%s\\\"\\nlog.to = \\\"" + config.log + "\\\"\\nlog.level = \\\"%s\\\"\\nlog.maxDays = %s\\n\" " + config.serverPort + " " + config.vhostHTTPPort + " " + ssh.quoteShellArg(config.proxyBindAddr) + " \"$token\" " + ssh.quoteShellArg(config.logLevel) + " " + config.logMaxDays + " > " + configFile,
       "  chmod 600 " + configFile,
       "fi",
       "grep -q \"^bindPort = " + config.serverPort + "$\" " + configFile,
@@ -131,7 +131,7 @@ export default class extends Base {
       "Type=simple",
       "ExecStart=" + config.binary + " -c " + config.config,
       "Restart=always",
-      "RestartSec=5",
+      "RestartSec=" + config.restartSec,
       "[Install]",
       "WantedBy=multi-user.target",
       "UNIT",

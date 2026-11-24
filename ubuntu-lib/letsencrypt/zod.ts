@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+﻿import { z } from "mcpserver";
 
 export const hostnameValidator = z.string().trim().toLowerCase()
   .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i);

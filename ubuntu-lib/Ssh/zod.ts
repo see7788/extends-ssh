@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+﻿import { z } from "mcpserver";
 
 export const sshExecuteValidator = z.object({
   command: z.string().trim().min(1),

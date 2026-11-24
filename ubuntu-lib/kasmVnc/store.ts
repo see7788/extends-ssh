@@ -2,22 +2,6 @@
 
 const kasmVncStore: ImmerStateCreator<{
   kasmVnc: {
-    readonly server: { // KasmVNC 服务端安装配置
-      readonly releaseApi: "https://github.com/kasmtech/KasmVNC/releases/latest"; // KasmVNC 官方 Release 最新版本地址
-      readonly packagePrefix: "kasmvncserver"; // 安装包名前缀
-      readonly aptPackages: readonly string[]; // KasmVNC 初始化依赖
-    };
-    readonly chromium: { // Chromium 安装配置
-      readonly aptPackages: readonly string[]; // Chromium 系统依赖
-      readonly snapPackage: "chromium"; // Chromium Snap 包名
-    };
-    readonly wechat: { // 微信安装配置
-      readonly aptPackages: readonly string[]; // 微信系统依赖
-      readonly packageUrl: "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb"; // 微信安装包地址
-    };
-    readonly desktop: { // XFCE 远程桌面安装配置
-      readonly aptPackages: readonly string[]; // XFCE、Thunar 和 dbus 依赖
-    };
     readonly instances: Array<{
       readonly application:
       | {
@@ -72,31 +56,6 @@ const kasmVncStore: ImmerStateCreator<{
   };
 }> = () => ({
   kasmVnc: {
-    server: {
-      releaseApi: "https://github.com/kasmtech/KasmVNC/releases/latest",
-      packagePrefix: "kasmvncserver",
-      aptPackages: ["python3", "openssl"],
-      httpdDirectory: "/opt/extends-ssh/kasmvnc-www",
-    },
-    chromium: {
-      aptPackages: ["python3", "openbox", "openssl", "snapd", "libasound2t64", "libnss3", "libatk-bridge2.0-0", "libgtk-3-0", "libgbm1", "libxss1", "libu2f-udev", "libvulkan1"],
-      snapPackage: "chromium",
-      binary: "/snap/chromium/current/usr/lib/chromium-browser/chrome",
-      extensionDirectory: "/opt/extends-ssh/chromium-extension",
-      dataDir: "/var/lib/kasm-vnc/chromium",
-      targetRoot: "/var/lib/kasm-vnc/chromium-target",
-    },
-    wechat: {
-      aptPackages: ["openssl", "curl", "openbox", "libegl1", "libgbm1", "libgl1", "libpulse0", "libasound2t64", "libxkbcommon0", "libxkbcommon-x11-0", "libxcb-xinerama0"],
-      packageUrl: "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb",
-      binary: "/opt/wechat/wechat",
-      dataDir: "/var/lib/kasm-vnc/wechat/.xwechat",
-      filesDir: "/var/lib/kasm-vnc/wechat/xwechat_files",
-    },
-    desktop: {
-      aptPackages: ["xfce4", "thunar", "dbus-x11", "openssl"],
-      dataDir: "/var/lib/kasm-vnc/desktop",
-    },
     instances: [
       {
         application: {

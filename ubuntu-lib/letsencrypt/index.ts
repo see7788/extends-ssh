@@ -10,7 +10,7 @@ export DEBIAN_FRONTEND=noninteractive
 dpkg --configure -a --force-confold
 if ! command -v certbot >/dev/null 2>&1 || ! python3 -c 'import certbot_nginx' >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y -qq --no-install-recommends certbot python3-certbot-nginx -o Dpkg::Options::=--force-confold
+  apt-get install -y -qq --no-install-recommends ${this.envs.letsencrypt.aptPackages.join(" ")} -o Dpkg::Options::=--force-confold
 fi
 certbot --version >/dev/null
 python3 -c 'import certbot_nginx'`);
@@ -31,7 +31,7 @@ CERTIFICATE_BASE=${ssh.quoteShellArg(certificateBase)}
 LETS_ENCRYPT_BASE=${ssh.quoteShellArg(letsEncryptBase)}
 if ! test -s "\$CERTIFICATE_BASE/fullchain.pem" \
   || ! test -s "\$CERTIFICATE_BASE/privkey.pem" \
-  || ! openssl x509 -checkend 2592000 -noout -in "\$CERTIFICATE_BASE/fullchain.pem" >/dev/null 2>&1; then
+  || ! openssl x509 -checkend ${this.envs.letsencrypt.renewalCheckSeconds} -noout -in "\$CERTIFICATE_BASE/fullchain.pem" >/dev/null 2>&1; then
   certbot certonly --nginx \
     --nginx-server-root ${ssh.quoteShellArg(nginxConfig.replace(/\/nginx\.conf$/, ""))} \
     --nginx-ctl ${ssh.quoteShellArg(nginxBinary)} \

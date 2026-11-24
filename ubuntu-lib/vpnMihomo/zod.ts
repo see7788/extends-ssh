@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+﻿import { z } from "mcpserver";
 
 export const subscriptionUrlValidator = z.string().trim().url().refine(value => {
   const protocol = new URL(value).protocol;
